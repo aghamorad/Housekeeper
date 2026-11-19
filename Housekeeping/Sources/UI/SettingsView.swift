@@ -198,7 +198,6 @@ struct SettingsView: View {
                 Link("MediaDock9 — macOS", destination: URL(string: "https://github.com/aghamorad/MediaDock9")!)
                 Link("Virastar — Web, macOS & iOS", destination: URL(string: "https://github.com/aghamorad/virastar")!)
                 Link("Jeopardy (Iranian Edition) — Web, macOS, iOS & Android", destination: URL(string: "https://github.com/aghamorad/jeopardy-iranian-edition")!)
-                Link("RANT — macOS, Windows & Linux", destination: URL(string: "https://github.com/aghamorad/rant-game")!)
                 Link("RaveBSD — macOS", destination: URL(string: "https://github.com/aghamorad/RaveBSD-Mac")!)
             }
         }
