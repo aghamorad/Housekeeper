@@ -192,14 +192,14 @@ struct SettingsView: View {
             }
 
             Section("More Apps by Morad") {
-                Link("Housekeeper Mini (Android & Meta Quest)", destination: URL(string: "https://github.com/aghamorad/Housekeeper-Mini")!)
-                Link("Bookbind (Book Print Typesetter)", destination: URL(string: "https://github.com/aghamorad/bookbind")!)
-                Link("RouteSweep (VPN & Route Diagnostics)", destination: URL(string: "https://github.com/aghamorad/routesweep")!)
-                Link("MediaDock9 (Media Downloader)", destination: URL(string: "https://github.com/aghamorad/MediaDock9")!)
-                Link("Virastar (Persian Writing & Editing)", destination: URL(string: "https://github.com/aghamorad/virastar")!)
-                Link("Jeopardy — Iranian Edition", destination: URL(string: "https://github.com/aghamorad/jeopardy-iranian-edition")!)
-                Link("RANT (Game)", destination: URL(string: "https://github.com/aghamorad/rant-game")!)
-                Link("RaveBSD (Mac App)", destination: URL(string: "https://github.com/aghamorad/RaveBSD-Mac")!)
+                Link("Housekeeper Mini — Android & Meta Quest", destination: URL(string: "https://github.com/aghamorad/Housekeeper-Mini")!)
+                Link("Bookbind — macOS & Web", destination: URL(string: "https://github.com/aghamorad/bookbind")!)
+                Link("RouteSweep — macOS", destination: URL(string: "https://github.com/aghamorad/routesweep")!)
+                Link("MediaDock9 — macOS", destination: URL(string: "https://github.com/aghamorad/MediaDock9")!)
+                Link("Virastar — Web, macOS & iOS", destination: URL(string: "https://github.com/aghamorad/virastar")!)
+                Link("Jeopardy (Iranian Edition) — Web, macOS, iOS & Android", destination: URL(string: "https://github.com/aghamorad/jeopardy-iranian-edition")!)
+                Link("RANT — macOS, Windows & Linux", destination: URL(string: "https://github.com/aghamorad/rant-game")!)
+                Link("RaveBSD — macOS", destination: URL(string: "https://github.com/aghamorad/RaveBSD-Mac")!)
             }
         }
         .formStyle(.grouped)
