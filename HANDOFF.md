@@ -1,3 +1,14 @@
+## 2026-11-19 — Housekeeper: MLX & Hermes Load/Unload Reliability Fix
+
+Universal bundle packaged (`x86_64` and `arm64`, 52 universal Mach-O binaries, codesign verified) via `./script/package_release.sh`.
+Installed and verified running at `/Applications/Housekeeper.app` (PID 27735); previous `/Applications/Housekeeper.app` moved to `~/.Trash`.
+
+What went into it:
+1. **Fixed `LocalModels.swift` MLX / Hermes Load & Unload**:
+   - Added `isMLXServerReachable()` and `ensureMLXServerRunning()` to check `launchctl print gui/<uid>/com.morad.mlx-vlm-server`, `launchctl bootstrap` the plist if not yet loaded into `launchd`, `launchctl kickstart -k`, and poll `/v1/models` / `/v1/metrics` for up to 20 s (replacing the blind 2 s sleep).
+   - Fixed `unloadHermes()` to surface non-200 HTTP errors when the MLX server is reachable instead of silently discarding status.
+   - Updated `loadInMLX` and `loadInHermes` to use `warmupMLX(target:)` and report explicit HTTP/connection errors when loading fails.
+
 ## 2026-11-13 — Housekeeper 0.29.1 (60) SHIPPED: Route Sweeper Tri-Provider (Windscribe, Surfshark & ExpressVPN) & Permissions Doctor Audit
 
 Universal bundle packaged (x86_64 and arm64, 52 universal Mach-O binaries, codesign verified).

@@ -776,12 +776,72 @@ final class LocalModelInventory: ObservableObject {
     }
 
     private func unloadHermes() async {
-        _ = await postJSON(hermesBase.appendingPathComponent("unload"), [:])
+        // Only surface an error if the server is reachable and rejects /unload;
+        // if it is already offline, nothing is resident in RAM.
+        if let status = await postJSON(hermesBase.appendingPathComponent("unload"), [:]),
+           status != 200 {
+            problem = "MLX server did not confirm unloading (HTTP \(status))."
+        }
+    }
+
+    private func isMLXServerReachable() async -> Bool {
+        if await getJSON(hermesBase.appendingPathComponent("v1/models")) != nil {
+            return true
+        }
+        return await getJSON(hermesBase.appendingPathComponent("v1/metrics")) != nil
+    }
+
+    private func ensureMLXServerRunning() async -> Bool {
+        if await isMLXServerReachable() {
+            return true
+        }
+
+        let domain = "gui/\(getuid())"
+        let label = "com.morad.mlx-vlm-server"
+        let plistPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents/\(label).plist").path
+
+        if await run("/bin/launchctl", ["print", "\(domain)/\(label)"], timeout: 10) == nil {
+            guard FileManager.default.fileExists(atPath: plistPath) else {
+                problem = "Local MLX server is not running and \(plistPath) was not found."
+                return false
+            }
+            _ = await run("/bin/launchctl", ["bootstrap", domain, plistPath], timeout: 15)
+        }
+
+        _ = await run("/bin/launchctl", ["kickstart", "-k", "\(domain)/\(label)"], timeout: 15)
+
+        // Python + MLX + FastAPI cold boot takes a few seconds; poll until ready.
+        for _ in 0..<40 {
+            if await isMLXServerReachable() {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+
+        problem = "Local MLX server on port 18434 did not respond in time after starting."
+        return false
+    }
+
+    private func warmupMLX(target: String) async -> Int? {
+        let payload: [String: Any] = [
+            "model": target,
+            "messages": [["role": "user", "content": "hi"]],
+            "max_tokens": 1
+        ]
+        if let status = await postJSON(hermesBase.appendingPathComponent("v1/chat/completions"), payload),
+           status == 200 {
+            return status
+        }
+        return await postJSON(hermesBase.appendingPathComponent("chat/completions"), payload)
     }
 
     private func loadInMLX(_ model: LocalModel) async {
-        // Unload any current model from RAM first to prevent exceeding memory
-        await unloadHermes()
+        // Unload any current model from RAM first if the server is already up.
+        if await isMLXServerReachable() {
+            await unloadHermes()
+            guard problem == nil else { return }
+        }
 
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let currentLink = home + "/.mlx-lm/models/current"
@@ -791,59 +851,30 @@ final class LocalModelInventory: ObservableObject {
             try? FileManager.default.createSymbolicLink(atPath: currentLink, withDestinationPath: path)
         }
 
+        guard await ensureMLXServerRunning() else { return }
+
         let target = model.path ?? currentLink
-        let status = await postJSON(
-            hermesBase.appendingPathComponent("v1/chat/completions"),
-            [
-                "model": target,
-                "messages": [["role": "user", "content": "hi"]],
-                "max_tokens": 1
-            ]
-        )
+        var status = await warmupMLX(target: target)
+        if status != 200, target != currentLink {
+            status = await warmupMLX(target: currentLink)
+        }
         if status != 200 {
-            let fallbackStatus = await postJSON(
-                hermesBase.appendingPathComponent("chat/completions"),
-                [
-                    "model": target,
-                    "messages": [["role": "user", "content": "hi"]],
-                    "max_tokens": 1
-                ]
-            )
-            if status != 200 && fallbackStatus != 200 {
-                _ = await run("/bin/launchctl", ["kickstart", "-k", "gui/\(getuid())/com.morad.mlx-vlm-server"])
-                try? await Task.sleep(for: .seconds(2))
-                _ = await postJSON(
-                    hermesBase.appendingPathComponent("v1/chat/completions"),
-                    [
-                        "model": "/Users/Morad/.mlx-lm/models/current",
-                        "messages": [["role": "user", "content": "hi"]],
-                        "max_tokens": 1
-                    ]
-                )
-            }
+            problem = "MLX server failed to load \(model.name) (\(status.map { "HTTP \($0)" } ?? "no response"))."
         }
     }
 
     private func loadInHermes(_ model: LocalModel) async {
-        await unloadHermes()
+        if await isMLXServerReachable() {
+            await unloadHermes()
+            guard problem == nil else { return }
+        } else {
+            guard await ensureMLXServerRunning() else { return }
+        }
+
         let target = model.reference ?? model.name
-        let status = await postJSON(
-            hermesBase.appendingPathComponent("v1/chat/completions"),
-            [
-                "model": target,
-                "messages": [["role": "user", "content": "hi"]],
-                "max_tokens": 1
-            ]
-        )
+        let status = await warmupMLX(target: target)
         if status != 200 {
-            _ = await postJSON(
-                hermesBase.appendingPathComponent("chat/completions"),
-                [
-                    "model": target,
-                    "messages": [["role": "user", "content": "hi"]],
-                    "max_tokens": 1
-                ]
-            )
+            problem = "Hermes MLX server failed to load \(model.name) (\(status.map { "HTTP \($0)" } ?? "no response"))."
         }
     }
 
