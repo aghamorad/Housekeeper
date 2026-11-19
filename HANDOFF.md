@@ -1,3 +1,17 @@
+## 2026-11-19 — Housekeeper: `models` CLI & Local `mcp` Stdio Server
+
+Universal bundle rebuilt (`./script/package_release.sh`), installed at `/Applications/Housekeeper.app` (codesign verified), and CLI shim refreshed at `/Users/Morad/.local/bin/housekeeping` (`./script/install_cli.sh`).
+
+What went into it:
+1. **Added `models` CLI subcommands (`HousekeepingCLI.swift`)**:
+   - `housekeeping models list [--json]`
+   - `housekeeping models load <name-or-id>`
+   - `housekeeping models unload [<name-or-id>]`
+2. **Added local `mcp` stdio JSON-RPC 2.0 server (`housekeeping mcp`)**:
+   - Exposes `list_models`, `load_model`, and `unload_model` over newline-delimited stdio.
+   - Verified `initialize`, `tools/list`, and `tools/call` (`list_models`).
+   - Registered `housekeeper` in `~/.gemini/settings.json`, `~/.hermes/config.yaml`, `~/.hermes/profiles/local/config.yaml`, and `~/.hermes/profiles/ps5/config.yaml`.
+
 ## 2026-11-19 — Housekeeper: MLX & Hermes Load/Unload Reliability Fix
 
 Universal bundle packaged (`x86_64` and `arm64`, 52 universal Mach-O binaries, codesign verified) via `./script/package_release.sh`.

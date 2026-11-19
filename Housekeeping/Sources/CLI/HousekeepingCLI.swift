@@ -81,6 +81,8 @@ enum HousekeepingCLI {
         case "where":      return whereIs(rest)
         case "version":    return version(rest)
         case "quarantine": return try await quarantine(rest)
+        case "models":     return try await models(rest)
+        case "mcp":        return await runMCPServer()
         case "help":       return help()
         default:
             if verb.hasPrefix("-") {
@@ -117,6 +119,13 @@ enum HousekeepingCLI {
 
           housekeeper quarantine [list|restore] [--json]
               What is being held, and putting things back. `restore` needs --yes.
+
+          housekeeper models [list|load <name>|unload [<name>]] [--json]
+              Inspect, load, or unload local models (MLX, Ollama, LM Studio, Housekeeper).
+
+          housekeeper mcp
+              Run a local stdio MCP server so AI agents can list, load, and unload
+              models or explain paths on this Mac.
 
           housekeeper where [--json]
               Where Housekeeper keeps what it keeps.
@@ -747,6 +756,293 @@ enum HousekeepingCLI {
             case .inspect: return "look_first"
             case .leave: return "leave_alone"
             }
+        }
+    }
+
+    // MARK: - Models & MCP
+
+    private static func models(_ arguments: [String]) async throws -> Int32 {
+        let options = Options(arguments)
+        let action = options.positional.first ?? "list"
+        let inventory = LocalModelInventory()
+        await inventory.read()
+
+        switch action {
+        case "list":
+            if options.json {
+                let payload = modelsJSONPayload(inventory)
+                if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]),
+                   let text = String(data: data, encoding: .utf8) {
+                    say(text)
+                }
+            } else {
+                say(formatModelsSummary(inventory))
+            }
+            return 0
+
+        case "load":
+            guard options.positional.count >= 2 else {
+                throw Failure(2, "Specify a model name or ID to load.", "housekeeper models load <name>")
+            }
+            let query = options.positional.dropFirst().joined(separator: " ")
+            guard let target = findModel(query, in: inventory) else {
+                throw Failure(1, "No local model matched \"\(query)\".", "housekeeper models list")
+            }
+            await inventory.load(target)
+            if let problem = inventory.problem {
+                throw Failure(1, problem)
+            }
+            say("Loaded \(target.name) (\(target.runtime.title)).")
+            return 0
+
+        case "unload":
+            if options.positional.count >= 2 {
+                let query = options.positional.dropFirst().joined(separator: " ")
+                guard let target = findModel(query, in: inventory) else {
+                    throw Failure(1, "No local model matched \"\(query)\".", "housekeeper models list")
+                }
+                await inventory.unload(target)
+            } else {
+                await inventory.freeEverything()
+            }
+            if let problem = inventory.problem {
+                throw Failure(1, problem)
+            }
+            say("Unloaded.")
+            return 0
+
+        default:
+            throw Failure(2, "Unknown models subcommand \"\(action)\".", "housekeeper models [list|load <name>|unload [<name>]]")
+        }
+    }
+
+    private static func findModel(_ query: String, in inventory: LocalModelInventory) -> LocalModel? {
+        let all = inventory.groups.flatMap { $0.models }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let exact = all.first(where: {
+            $0.id == trimmed || $0.reference == trimmed || $0.path == trimmed
+                || $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
+        }) {
+            return exact
+        }
+        let needle = trimmed.lowercased()
+        return all.first(where: {
+            $0.name.lowercased().contains(needle)
+                || $0.id.lowercased().contains(needle)
+                || ($0.path?.lowercased().contains(needle) ?? false)
+        })
+    }
+
+    private static func modelsJSONPayload(_ inventory: LocalModelInventory) -> [String: Any] {
+        let groups: [[String: Any]] = inventory.groups.map { group in
+            let rows: [[String: Any]] = group.models.map { model in
+                var row: [String: Any] = [
+                    "id": model.id,
+                    "name": model.name,
+                    "runtime": group.runtime.title,
+                    "loaded": model.loaded,
+                    "can_load": model.control == .loadAndUnload,
+                    "can_unload": model.control != .none
+                ]
+                if let bytes = model.bytes { row["disk_bytes"] = bytes }
+                if let resident = model.residentBytes { row["resident_bytes"] = resident }
+                if let path = model.path { row["path"] = path }
+                if let note = model.note { row["note"] = note }
+                return row
+            }
+            var entry: [String: Any] = [
+                "runtime": group.runtime.title,
+                "models": rows
+            ]
+            if let hint = group.hint { entry["hint"] = hint }
+            return entry
+        }
+        return [
+            "memory_free_bytes": inventory.memory.free,
+            "memory_total_bytes": inventory.memory.total,
+            "groups": groups
+        ]
+    }
+
+    private static func formatModelsSummary(_ inventory: LocalModelInventory) -> String {
+        let free = ByteCountFormatter.string(fromByteCount: Int64(inventory.memory.free), countStyle: .memory)
+        let total = ByteCountFormatter.string(fromByteCount: Int64(inventory.memory.total), countStyle: .memory)
+        var lines = ["Memory: \(free) free of \(total)"]
+        for group in inventory.groups where !group.models.isEmpty {
+            lines.append("")
+            lines.append(group.runtime.title)
+            for model in group.models {
+                let status = model.loaded ? "[LOADED]" : "[idle]"
+                let size = model.bytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "—"
+                lines.append("  \(status) \(model.name) (\(size))  id=\(model.id)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func runMCPServer() async -> Int32 {
+        let inventory = LocalModelInventory()
+
+        while let line = readLine(strippingNewline: true) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            guard let data = trimmed.data(using: .utf8),
+                  let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                continue
+            }
+
+            let method = request["method"] as? String ?? ""
+            let id = request["id"]
+            let params = request["params"] as? [String: Any] ?? [:]
+
+            // Notifications have no id and expect no response.
+            if id == nil { continue }
+
+            let response: [String: Any]
+            switch method {
+            case "initialize":
+                let clientVersion = (params["protocolVersion"] as? String) ?? "2024-11-05"
+                response = mcpResult(id: id!, result: [
+                    "protocolVersion": clientVersion,
+                    "capabilities": ["tools": [:]],
+                    "serverInfo": [
+                        "name": "housekeeper",
+                        "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+                    ]
+                ])
+
+            case "ping":
+                response = mcpResult(id: id!, result: [:])
+
+            case "tools/list":
+                response = mcpResult(id: id!, result: ["tools": mcpToolsSchema()])
+
+            case "tools/call":
+                let toolName = params["name"] as? String ?? ""
+                let args = params["arguments"] as? [String: Any] ?? [:]
+                let (text, isError) = await callMCPTool(name: toolName, arguments: args, inventory: inventory)
+                response = mcpResult(id: id!, result: [
+                    "content": [["type": "text", "text": text]],
+                    "isError": isError
+                ])
+
+            default:
+                response = [
+                    "jsonrpc": "2.0",
+                    "id": id!,
+                    "error": [
+                        "code": -32601,
+                        "message": "Method not found: \(method)"
+                    ]
+                ]
+            }
+
+            if let outData = try? JSONSerialization.data(withJSONObject: response, options: []),
+               let outText = String(data: outData, encoding: .utf8) {
+                print(outText)
+                fflush(stdout)
+            }
+        }
+        return 0
+    }
+
+    private static func mcpResult(id: Any, result: [String: Any]) -> [String: Any] {
+        ["jsonrpc": "2.0", "id": id, "result": result]
+    }
+
+    private static func mcpToolsSchema() -> [[String: Any]] {
+        [
+            [
+                "name": "list_models",
+                "description": "List all detected local AI models on this Mac (MLX, Ollama, LM Studio, Housekeeper) with loaded status, free RAM, and disk sizes.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [:]
+                ]
+            ],
+            [
+                "name": "load_model",
+                "description": "Load a local AI model into memory on this Mac (for example 'Qwen3.5-9B-Distilled-OPUS-Heretic-MLX-VLM-4bit' or 'Qwen3.5-4B-Claude-Heretic-4bit').",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "model": [
+                            "type": "string",
+                            "description": "Model name, path, or id from list_models."
+                        ]
+                    ],
+                    "required": ["model"]
+                ]
+            ],
+            [
+                "name": "unload_model",
+                "description": "Unload a loaded local AI model from RAM. Omit 'model' to unload all currently loaded models.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "model": [
+                            "type": "string",
+                            "description": "Optional model name, path, or id. If omitted, unloads all loaded models."
+                        ]
+                    ]
+                ]
+            ]
+        ]
+    }
+
+    private static func callMCPTool(
+        name: String,
+        arguments: [String: Any],
+        inventory: LocalModelInventory
+    ) async -> (String, Bool) {
+        switch name {
+        case "list_models":
+            await inventory.read()
+            let payload = modelsJSONPayload(inventory)
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]),
+               let text = String(data: data, encoding: .utf8) {
+                return (text, false)
+            }
+            return (formatModelsSummary(inventory), false)
+
+        case "load_model":
+            guard let query = arguments["model"] as? String, !query.isEmpty else {
+                return ("Missing required 'model' argument.", true)
+            }
+            await inventory.read()
+            guard let target = findModel(query, in: inventory) else {
+                return ("No local model matched '\(query)'. Call list_models first.", true)
+            }
+            if target.loaded {
+                return ("\(target.name) is already loaded in memory.", false)
+            }
+            await inventory.load(target)
+            if let problem = inventory.problem {
+                return (problem, true)
+            }
+            return ("Loaded \(target.name) (\(target.runtime.title)).", false)
+
+        case "unload_model":
+            await inventory.read()
+            if let query = arguments["model"] as? String, !query.isEmpty {
+                guard let target = findModel(query, in: inventory) else {
+                    return ("No local model matched '\(query)'.", true)
+                }
+                await inventory.unload(target)
+                if let problem = inventory.problem {
+                    return (problem, true)
+                }
+                return ("Unloaded \(target.name).", false)
+            } else {
+                await inventory.freeEverything()
+                if let problem = inventory.problem {
+                    return (problem, true)
+                }
+                return ("Unloaded all loaded local models.", false)
+            }
+
+        default:
+            return ("Unknown tool: \(name)", true)
         }
     }
 
