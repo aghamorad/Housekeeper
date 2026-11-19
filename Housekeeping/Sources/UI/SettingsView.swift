@@ -190,6 +190,17 @@ struct SettingsView: View {
                 LabeledContent("Studio", value: "Benign Monster Works")
                 LabeledContent("Author", value: "Made by Morad")
             }
+
+            Section("More Apps by Morad") {
+                Link("Housekeeper Mini (Android & Meta Quest)", destination: URL(string: "https://github.com/aghamorad/Housekeeper-Mini")!)
+                Link("Bookbind (Book Print Typesetter)", destination: URL(string: "https://github.com/aghamorad/bookbind")!)
+                Link("RouteSweep (VPN & Route Diagnostics)", destination: URL(string: "https://github.com/aghamorad/routesweep")!)
+                Link("MediaDock9 (Media Downloader)", destination: URL(string: "https://github.com/aghamorad/MediaDock9")!)
+                Link("Virastar (Persian Writing & Editing)", destination: URL(string: "https://github.com/aghamorad/virastar")!)
+                Link("Jeopardy — Iranian Edition", destination: URL(string: "https://github.com/aghamorad/jeopardy-iranian-edition")!)
+                Link("RANT (Game)", destination: URL(string: "https://github.com/aghamorad/rant-game")!)
+                Link("RaveBSD (Mac App)", destination: URL(string: "https://github.com/aghamorad/RaveBSD-Mac")!)
+            }
         }
         .formStyle(.grouped)
         // The grouped form draws the system's own panel behind its sections.
