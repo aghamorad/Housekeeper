@@ -21,9 +21,9 @@ struct HousekeepingApp: App {
             ContentView()
                 .environmentObject(appState)
         }
-        .windowStyle(.hiddenTitleBar)
+        .windowStyle(.titleBar)
         .windowResizability(.automatic)
-        .defaultSize(width: 1320, height: 840)
+        .defaultSize(width: 1080, height: 720)
         .commands {
             CommandGroup(replacing: .newItem) {}
 
@@ -187,6 +187,10 @@ struct HousekeepingApp: App {
                     appState.showDNSSwitcher = true
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
+
+                Button("Speed Test…") {
+                    appState.showSpeedTest = true
+                }
 
                 // The one screen about the models themselves rather than the disk
                 // they sit on: what is installed, what is in memory, and the way

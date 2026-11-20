@@ -47,6 +47,7 @@ struct ContentView: View {
             case .vpnTunnels: VPNTunnelsView()
             case .backgroundActivity: BackgroundActivityView()
             case .dnsSwitcher: DNSConfigView()
+            case .speedTest: SpeedTestView()
             case .permissionsDoctor: PermissionsDoctorView()
             }
         }
@@ -82,7 +83,7 @@ struct ContentView: View {
             .environment(\.uiStyle, style)
             .housekeepingSurface(style)
             // The tools share one navigable window; the rail scrolls when needed.
-            .frame(minWidth: 1180, minHeight: 720)
+            .frame(minWidth: 940, minHeight: 620)
             // Contextual help and confirmations stay above the active workspace.
             .sheet(item: $appState.presentedScreen) { screen in
                 sheetBody(screen)
@@ -147,6 +148,9 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenDNSSwitcher)) { _ in
                 appState.showDNSSwitcher = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenSpeedTest)) { _ in
+                appState.showSpeedTest = true
             }
             .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenPermissionsDoctor)) { _ in
                 appState.showPermissionsDoctor = true
@@ -476,12 +480,11 @@ private struct JobBar: View {
                     Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 30, height: 30)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Housekeeper").font(.system(size: 14, weight: .bold))
-                    Text("System Care & Vitals").font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text("Housekeeper").font(.system(size: 14, weight: .semibold))
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 18).padding(.top, 24).padding(.bottom, 20)
+            .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 14)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -547,6 +550,9 @@ private struct JobBar: View {
 
                     // Category 4: Network & Routes
                     sidebarCategory("Network & Routes") {
+                        if let job = allJobs.first(where: { $0.id == "speed-test" }) {
+                            sidebarJob(job, customTitle: "Speed Test", customIcon: "speedometer")
+                        }
                         if let job = allJobs.first(where: { $0.id == "test-routes" }) {
                             sidebarJob(job, customTitle: "Route Sweep", customIcon: "network")
                         }
@@ -703,6 +709,7 @@ private struct JobBar: View {
         case .vpnTunnels: return "vpn-tunnels"
         case .backgroundActivity: return "background-activity"
         case .dnsSwitcher: return "dns-switcher"
+        case .speedTest: return "speed-test"
         case .permissionsDoctor: return "fix-permissions"
         default: return nil
         }
@@ -797,6 +804,14 @@ private struct JobBar: View {
     /// the reason the warning in its help text is not a formality.
     private var routeJobs: [Job] {
         [
+            Job(
+                id: "speed-test",
+                title: "Speed Test",
+                systemImage: "speedometer",
+                zone: .route,
+                help: "Measure download speed, upload speed, ping, and responsiveness without changing any network settings.",
+                action: { appState.showSpeedTest = true }
+            ),
             Job(
                 id: "dns-switcher",
                 title: "DNS Easy Switcher",

@@ -62,7 +62,7 @@ final class AppState: ObservableObject {
         case cleanupConfirmation, guidedCleanup, cleanupPreview, quarantine
         case protectionList, diskBrowser, reconcile, updateList, setupCheck
         case housekeeper, routes, phone, mediaDock, bookbind, selfUpdate
-        case clean, localModels, fanControl, uninstaller, appRepair, batteryHealth, vpnTunnels, dnsSwitcher, backgroundActivity, permissionsDoctor
+        case clean, localModels, fanControl, uninstaller, appRepair, batteryHealth, vpnTunnels, dnsSwitcher, speedTest, backgroundActivity, permissionsDoctor
 
         var id: String { rawValue }
 
@@ -70,7 +70,7 @@ final class AppState: ObservableObject {
             switch self {
             case .clean, .diskBrowser, .reconcile, .updateList, .setupCheck, .routes,
                  .phone, .mediaDock, .bookbind, .quarantine, .protectionList,
-                 .localModels, .fanControl, .uninstaller, .appRepair, .batteryHealth, .vpnTunnels, .dnsSwitcher, .backgroundActivity, .permissionsDoctor: return true
+                 .localModels, .fanControl, .uninstaller, .appRepair, .batteryHealth, .vpnTunnels, .dnsSwitcher, .speedTest, .backgroundActivity, .permissionsDoctor: return true
             default: return false
             }
         }
@@ -206,6 +206,10 @@ final class AppState: ObservableObject {
     var showDNSSwitcher: Bool {
         get { screen == .dnsSwitcher }
         set { show(.dnsSwitcher, newValue) }
+    }
+    var showSpeedTest: Bool {
+        get { screen == .speedTest }
+        set { show(.speedTest, newValue) }
     }
     var showPermissionsDoctor: Bool {
         get { screen == .permissionsDoctor }

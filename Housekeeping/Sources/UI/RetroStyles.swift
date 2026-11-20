@@ -42,50 +42,33 @@ struct RetroColors {
 /// underneath both. The app wears them the way the icon does — the maroon is the
 /// surface everything sits on, the lit red is for what wants attention. Nothing
 /// here is a mood; it is the same red, from the same picture.
+/// Adaptive semantic ink tokens used by the menu bar panel and shared views.
+/// Automatically tracks macOS Light and Dark appearances with native contrast.
 struct HousekeepingInk {
-    /// The tile's lit face: what the icon is recognised by when it is small.
-    static let red = Color(red: 144/255, green: 32/255, blue: 24/255)
-    /// The same red lifted. For glyphs and links on maroon, where the tile's own
-    /// value would sink into the background instead of standing on it.
-    static let redLifted = Color(red: 205/255, green: 74/255, blue: 60/255)
-    /// The shaded part of the tile, and the app's hairlines.
-    static let redShaded = Color(red: 92/255, green: 15/255, blue: 10/255)
-    /// The line between one surface and the next.
-    static let hairline = Color(red: 122/255, green: 34/255, blue: 26/255)
+    static let red = Color.accentColor
+    static let redLifted = Color.accentColor
+    static let redShaded = Color.accentColor
+    static let hairline = Color(NSColor.separatorColor)
 
-    /// The icon's deepest maroon: the surface the window is made of.
-    static let surface = Color(red: 40/255, green: 7/255, blue: 5/255)
-    /// A surface raised off that one — panels, cards, the grouping behind a list.
-    static let surfaceRaised = Color(red: 58/255, green: 12/255, blue: 9/255)
+    static let surface = Color(NSColor.windowBackgroundColor)
+    static let surfaceRaised = Color(NSColor.controlBackgroundColor)
 
-    /// The icon's sheen, warmed: light enough to read a paragraph by.
-    static let text = Color(red: 242/255, green: 228/255, blue: 225/255)
-    static let secondaryText = Color(red: 201/255, green: 164/255, blue: 157/255)
+    static let text = Color.primary
+    static let secondaryText = Color.secondary
 
-    // The three verdicts keep their usual meanings, but they have to be legible on
-    // maroon and they must not be mistaken for the app's own red — a warning that
-    // looks like the brand is a warning that does not read as one.
-    static let positive = Color(red: 111/255, green: 199/255, blue: 152/255)
-    static let caution = Color(red: 232/255, green: 168/255, blue: 79/255)
-    static let negative = Color(red: 255/255, green: 108/255, blue: 86/255)
+    static let positive = Color(NSColor.systemGreen)
+    static let caution = Color(NSColor.systemOrange)
+    static let negative = Color(NSColor.systemRed)
 }
 
-/// The burgundy identity is shared by the modern window and its controls.
-/// Light mode keeps the same warm undertone with sufficient text contrast.
+/// Native macOS semantic surface palette for the modern interface.
 enum HousekeepingPalette {
-    private static func adaptive(dark: (CGFloat, CGFloat, CGFloat), light: (CGFloat, CGFloat, CGFloat)) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            let rgb = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
-            return NSColor(srgbRed: rgb.0 / 255, green: rgb.1 / 255, blue: rgb.2 / 255, alpha: 1)
-        })
-    }
-
-    static let background = adaptive(dark: (38, 12, 16), light: (249, 244, 241))
-    static let sidebar = adaptive(dark: (28, 14, 17), light: (239, 229, 224))
-    static let panel = adaptive(dark: (51, 29, 33), light: (255, 252, 250))
-    static let raised = adaptive(dark: (64, 37, 41), light: (240, 228, 223))
-    static let accent = adaptive(dark: (234, 177, 158), light: (158, 47, 39))
-    static let button = adaptive(dark: (151, 57, 58), light: (158, 47, 39))
+    static let background = Color(NSColor.windowBackgroundColor)
+    static let sidebar = Color(NSColor.underPageBackgroundColor)
+    static let panel = Color(NSColor.controlBackgroundColor)
+    static let raised = Color(NSColor.quaternaryLabelColor).opacity(0.28)
+    static let accent = Color.accentColor
+    static let button = Color.accentColor
 }
 
 // MARK: - Retro Typography

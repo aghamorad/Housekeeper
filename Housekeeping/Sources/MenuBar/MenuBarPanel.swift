@@ -59,6 +59,7 @@ struct MenuBarPanel: View {
     let onClose: () -> Void
     let onDisk: () -> Void
     var onBatteryHealth: (() -> Void)? = nil
+    var onSpeedTest: (() -> Void)? = nil
     let onExplain: (HousekeeperTopic) -> Void
     let onResize: (CGFloat) -> Void
 
@@ -152,10 +153,10 @@ struct MenuBarPanel: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("HOUSEKEEPING")
-                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-                    .tracking(1.4)
-                    .foregroundStyle(HousekeepingInk.secondaryText.opacity(0.85))
+                Text("HOUSEKEEPER")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .tracking(1.1)
+                    .foregroundStyle(HousekeepingInk.secondaryText)
 
                 if snapshot.isMeasuring {
                     Text("Measuring the house…")
@@ -1458,7 +1459,11 @@ struct MenuBarPanel: View {
 
             HStack(spacing: 8) {
                 DoorButton(title: "Free RAM", icon: "memorychip", action: { _ = vitals.freeRAM() })
-                DoorButton(title: "Clean Clutter", icon: "sparkles", action: leaving(onScan))
+                if let onSpeedTest {
+                    DoorButton(title: "Speed Test", icon: "speedometer", action: leaving(onSpeedTest))
+                } else {
+                    DoorButton(title: "Clean", icon: "sparkles", action: leaving(onScan))
+                }
                 DoorButton(title: "Cooling", icon: "fan.fill", action: leaving(onFans))
                 DoorButton(title: "Open App", icon: "macwindow", action: leaving(onOpen))
             }

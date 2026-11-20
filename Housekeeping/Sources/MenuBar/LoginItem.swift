@@ -93,7 +93,7 @@ final class LoginItem: NSObject, ObservableObject {
     private func writeAgent() -> Bool {
         let contents: [String: Any] = [
             "Label": Self.label,
-            "ProgramArguments": ["/usr/bin/open", "-a", Bundle.main.bundlePath],
+            "ProgramArguments": ["/usr/bin/open", "-g", "-a", Bundle.main.bundlePath, "--args", "--background"],
             "RunAtLoad": true,
             "LimitLoadToSessionType": "Aqua"
         ]

@@ -8,6 +8,7 @@ struct SettingsView: View {
     @Environment(\.uiStyle) private var style
     @AppStorage("housekeeping.appearance") private var appearance = "system"
     @AppStorage("housekeeping.showInDock") private var showInDock = true
+    @AppStorage("housekeeping.startInMenuBarAtLogin") private var startInMenuBarAtLogin = true
 
     var body: some View {
         Form {
@@ -45,6 +46,15 @@ struct SettingsView: View {
                 Text(showInDock
                      ? "Housekeeping appears in the Dock and the menu bar."
                      : "Housekeeping stays in the menu bar. Click the octopus to open the window or quit. It is hidden from the Dock and Command-Tab.")
+                    .font(.callout)
+                    .foregroundStyle(style.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Toggle("Open in menu bar only at login", isOn: $startInMenuBarAtLogin)
+
+                Text(startInMenuBarAtLogin
+                     ? "When your Mac restarts or you log in, Housekeeper starts quietly in the menu bar without opening its main window."
+                     : "Housekeeper opens its main window automatically when launched at login.")
                     .font(.callout)
                     .foregroundStyle(style.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)

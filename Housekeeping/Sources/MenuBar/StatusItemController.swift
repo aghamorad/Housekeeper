@@ -23,6 +23,7 @@ extension Notification.Name {
     static let housekeepingOpenBookbind = Notification.Name("HousekeepingOpenBookbind")
     static let housekeepingOpenVPNTunnels = Notification.Name("HousekeepingOpenVPNTunnels")
     static let housekeepingOpenDNSSwitcher = Notification.Name("HousekeepingOpenDNSSwitcher")
+    static let housekeepingOpenSpeedTest = Notification.Name("HousekeepingOpenSpeedTest")
     static let housekeepingOpenPermissionsDoctor = Notification.Name("HousekeepingOpenPermissionsDoctor")
     /// Opens the housekeeper already holding a topic. The topic itself travels as
     /// the notification's object, because a reading is the reason it was opened.
@@ -55,19 +56,71 @@ final class WindowOpener {
 
     private var open: (@MainActor @Sendable () -> Void)?
     private var waiting: (@MainActor @Sendable () -> Void)?
+    private(set) var isSuppressingInitialWindow = false
+    private var suppressionObservers: [NSObjectProtocol] = []
 
     private init() {}
+
+    /// Suppresses SwiftUI's automatic main window when launched at login or with
+    /// `--background`, keeping Housekeeper quietly in the menu bar until asked.
+    func beginSilentLaunchSuppression() {
+        guard !isSuppressingInitialWindow else { return }
+        isSuppressingInitialWindow = true
+        suppressVisibleMainWindows()
+
+        let center = NotificationCenter.default
+        let names: [Notification.Name] = [
+            NSWindow.didBecomeKeyNotification,
+            NSWindow.didBecomeMainNotification,
+            NSWindow.didExposeNotification
+        ]
+        suppressionObservers = names.map { name in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                Task { @MainActor in
+                    guard let self, self.isSuppressingInitialWindow,
+                          let window = note.object as? NSWindow,
+                          window.level == .normal,
+                          window.styleMask.contains(.titled) else { return }
+                    window.isRestorable = false
+                    window.orderOut(nil)
+                }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+            self?.endSilentLaunchSuppression()
+        }
+    }
+
+    func endSilentLaunchSuppression() {
+        isSuppressingInitialWindow = false
+        for observer in suppressionObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        suppressionObservers.removeAll()
+    }
+
+    func suppressVisibleMainWindows() {
+        for window in NSApp.windows where window.level == .normal && window.styleMask.contains(.titled) {
+            window.isRestorable = false
+            window.orderOut(nil)
+        }
+    }
 
     /// Called by the main window as it appears. Kept rather than used, because its
     /// value is entirely in still being here once the window has closed.
     func register(_ open: @escaping @MainActor @Sendable () -> Void) {
         self.open = open
-        deliver()
+        if isSuppressingInitialWindow {
+            suppressVisibleMainWindows()
+        } else {
+            deliver()
+        }
     }
 
     /// Brings the window back, running `then` once it is there — immediately if it
     /// was only closed or hidden, or when it comes up if it has to be built again.
     func withWindow(_ then: @escaping @MainActor @Sendable () -> Void) {
+        endSilentLaunchSuppression()
         bringForward()
 
         if let window = liveWindow() {
@@ -372,6 +425,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             onClose: { [weak self] in self?.popover?.performClose(nil) },
             onDisk: { [weak self] in self?.openDisk() },
             onBatteryHealth: { [weak self] in self?.openBatteryHealth() },
+            onSpeedTest: { [weak self] in self?.openSpeedTest() },
             onExplain: { [weak self] topic in self?.explain(topic) },
             onResize: { [weak self] height in self?.resize(to: height) }
         )
@@ -379,10 +433,6 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
-        // The panel is always the dark house, whatever the Mac is wearing. Without
-        // this the popover draws its own light chrome around it — a white arrow and
-        // a pale edge, framing a dark panel.
-        popover.appearance = NSAppearance(named: .darkAqua)
         popover.contentViewController = NSHostingController(rootView: root)
         popover.delegate = self
         self.popover = popover
@@ -491,8 +541,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         menu.addItem(entry("Bookbind…", #selector(openBookbind)))
         menu.addItem(entry("VPN Tunnels…", #selector(openVPNTunnels)))
         menu.addItem(entry("DNS Easy Switcher…", #selector(openDNSSwitcher)))
+        menu.addItem(entry("Speed Test…", #selector(openSpeedTest)))
         menu.addItem(.separator())
-        menu.addItem(entry("Quit Housekeeping", #selector(quit)))
+        menu.addItem(entry("Quit Housekeeper", #selector(quit)))
 
         return menu
     }
@@ -564,6 +615,12 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     @objc private func openDNSSwitcher() {
         WindowOpener.shared.withWindow {
             NotificationCenter.default.post(name: .housekeepingOpenDNSSwitcher, object: nil)
+        }
+    }
+
+    @objc private func openSpeedTest() {
+        WindowOpener.shared.withWindow {
+            NotificationCenter.default.post(name: .housekeepingOpenSpeedTest, object: nil)
         }
     }
 

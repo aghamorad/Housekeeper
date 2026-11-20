@@ -6,11 +6,24 @@ import Cocoa
 
 class AppDelegate: NSObject, NSApplicationDelegate {
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        if LaunchBehavior.shouldStartInMenuBarOnly(notification: nil) {
+            WindowOpener.shared.beginSilentLaunchSuppression()
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // One window, and only one. Left on, macOS adds window tabbing, which
         // puts "Show Tab Bar" and "Show All Tabs" in the View menu as disabled
         // items — a menu of things this app does not do.
         NSWindow.allowsAutomaticWindowTabbing = false
+
+        // Prevent macOS reboot/resume from reopening the main window in full screen
+        // and honor silent menu-bar-only startup at login.
+        if LaunchBehavior.shouldStartInMenuBarOnly(notification: notification) {
+            WindowOpener.shared.beginSilentLaunchSuppression()
+        }
+        disableMainWindowRestoration()
 
         // A sheet must not be able to hold the app open.
         allowQuittingThroughSheets()
@@ -26,6 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        SpeedTestEngine.shared.cancel()
         // The housekeeper's runtime is a child process holding most of a gigabyte
         // while it is up, and it is nobody else's to shut down. Left alone it outlives
         // the app that started it, still resident and still listening, with nothing
@@ -41,6 +55,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Bookbind's engine, too. It watches this process and would quit on its
         // own, but saying so here is quicker and does not depend on it noticing.
         BookbindEngine.current?.stop()
+    }
+
+    private func disableMainWindowRestoration() {
+        for window in NSApp.windows where window.level == .normal {
+            window.isRestorable = false
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeMainNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            (notification.object as? NSWindow)?.isRestorable = false
+        }
     }
 
     /// Lets the app be quit while one of its own sheets is open.
@@ -75,6 +102,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+}
+
+/// Detects login-item / reboot-resume launches so Housekeeper stays quietly in
+/// the menu bar instead of popping open its main window when the Mac restarts.
+@MainActor
+enum LaunchBehavior {
+    static let startInMenuBarAtLoginKey = "housekeeping.startInMenuBarAtLogin"
+
+    static var startInMenuBarAtLogin: Bool {
+        let defaults = UserDefaults.standard
+        return defaults.object(forKey: startInMenuBarAtLoginKey) == nil
+            || defaults.bool(forKey: startInMenuBarAtLoginKey)
+    }
+
+    static func shouldStartInMenuBarOnly(notification: Notification?) -> Bool {
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("--background") || args.contains("--menubar-only") {
+            return true
+        }
+        guard startInMenuBarAtLogin else { return false }
+
+        if let event = NSAppleEventManager.shared().currentAppleEvent,
+           event.eventID == AEEventID(kAEOpenApplication),
+           let prop = event.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue {
+            if prop == DescType(keyAELaunchedAsLogInItem) || prop == DescType(keyAELaunchedAsServiceItem) {
+                return true
+            }
+        }
+
+        if let isDefault = notification?.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool,
+           !isDefault {
+            return true
+        }
+
+        return false
+    }
 }
 
 /// The menu-bar item is installed before the Dock can be hidden. Accessory mode

@@ -1,3 +1,26 @@
+## 2026-11-20 — Housekeeper 0.30.0 (61): Native macOS Interface Overhaul, Silent Menu-Bar Login Startup & Built-In Speed Test
+
+Universal bundle rebuilt (`./script/package_release.sh`), installed at `/Applications/Housekeeper.app` (codesign verified, `0.0%` idle CPU), and pushed to `origin/main` on `aghamorad/Housekeeper`.
+
+What went into it:
+1. **Non-AI-Slop Native macOS Interface Overhaul (`RetroStyles.swift`, `ModernChrome.swift`, `OverviewView.swift`, `ContentView.swift`, `HousekeepingApp.swift`, `MenuBarPanel.swift`)**:
+   - Replaced custom maroon/burgundy tinted window surfaces (`HousekeepingPalette`, `HousekeepingInk`) with adaptive native macOS semantic colors (`NSColor.windowBackgroundColor`, `NSColor.controlBackgroundColor`, `NSColor.separatorColor`, `Color.accentColor`).
+   - Replaced tinted `LinearGradient` + `RadialGradient` window backdrop with native `NSVisualEffectView` (`.sidebar`, `.behindWindow`) in the sidebar and flat native `windowBackgroundColor` in the main pane.
+   - Stripped gradient card fills, glossy borders, heavy drop shadows (`radius: 20`), sliding button sheen, and hover scale gimmicks from `HousekeepingCardChrome` and `HousekeepingButtonStyle`.
+   - Switched main window from `.windowStyle(.hiddenTitleBar)` (`1320×840`, `minWidth: 1180`) to native `.windowStyle(.titleBar)` (`1080×720`, `minWidth: 940`).
+   - Redesigned `OverviewView` from shadowed bento grids into clean macOS System Settings-style grouped lists with a calm header, one-line scope note, and flat native storage bar; updated `SidebarNavigationRow` to native `Color.accentColor` selection with white label.
+   - Removed forced `.darkAqua` appearance on `NSPopover` in `StatusItemController` so the menu bar panel natively follows Light/Dark mode.
+2. **Silent Menu-Bar-Only Startup at Login / Reboot (`AppDelegate.swift`, `StatusItemController.swift`, `LoginItem.swift`, `SettingsView.swift`)**:
+   - Added `LaunchBehavior` detecting login/reboot launches via `--background` / `--menubar-only` flags, Apple Event `keyAELaunchedAsLogInItem` / `keyAELaunchedAsServiceItem`, and `NSApplication.launchIsDefaultUserInfoKey == false`.
+   - Added `WindowOpener.shared.beginSilentLaunchSuppression()` so SwiftUI's initial `WindowGroup(id: "main")` window is suppressed (`orderOut(nil)`) on login launches while staying immediately reopenable from the menu bar or Dock.
+   - Disabled `window.isRestorable = false` on normal windows so macOS Reboot/Resume never reopens the main window in full screen.
+   - Updated `LoginItem.writeAgent()` to launch via `/usr/bin/open -g -a <app> --args --background`, and added the **Open in menu bar only at login** toggle (default ON) in Settings → Startup.
+   - Set existing System Events login item `Housekeeping` (`/Applications/Housekeeper.app`) to `hidden: true`.
+3. **Built-In Speed Test (`SpeedTestEngine.swift`, `SpeedTestView.swift`, `AppState.swift`, `ContentView.swift`, `OverviewView.swift`, `StatusItemController.swift`, `MenuBarPanel.swift`)**:
+   - Added `SpeedTestEngine` supporting **Cloudflare Edge** (default: live streaming Mbps download, upload, 5-sample median ping & jitter, edge city/colo metadata, interface/VPN detection) and **Apple Network Quality** (`/usr/bin/networkQuality -c -M 15` with a hard 20-second watchdog timeout so it never hangs on throttled links).
+   - Added `SpeedTestView` with live progress, 3-column monospaced readouts (Download / Upload / Ping), plain-English quality verdict, 1-click Copy Result, and persistent 12-run history.
+   - Wired Speed Test into the **Network & Routes** sidebar section, Overview, Jobs menu, menu bar popover quick actions, and status item right-click menu.
+
 ## 2026-11-19 — Housekeeper: `models` CLI & Local `mcp` Stdio Server
 
 Universal bundle rebuilt (`./script/package_release.sh`), installed at `/Applications/Housekeeper.app` (codesign verified), and CLI shim refreshed at `/Users/Morad/.local/bin/housekeeping` (`./script/install_cli.sh`).
