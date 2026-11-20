@@ -1,3 +1,22 @@
+## 2026-11-21 — Housekeeper 0.30.2 (63): Space Lens Real App & Folder Sizing, Apps Tab, Large-File Fix & Safe Trash
+
+Universal bundle rebuilt (`./script/package_release.sh`), installed at `/Applications/Housekeeper.app`, and pushed to `origin/main` on `aghamorad/Housekeeper`.
+
+What went into it:
+1. **Fixed Broken Folder & App Sizing in Space Lens (`SpaceAnalyzer.swift`)**:
+   - Replaced `loadFolder(path:)`'s `vals?.fileSize ?? 0` stub (which always returned `0` for folders and `.app` packages) with a fast, concurrent `TaskGroup` directory & package sizer (`measurePathBytes`) using `.totalFileAllocatedSizeKey` / `.totalFileSizeKey` / `.fileSizeKey`, skipping symlinks and virtual root mounts (`/System/Volumes/Data`, etc.), deduplicating hard links, and caching measured sizes in memory for instant Back/Forward navigation.
+   - Fixed `findLargeFiles` so it stats and sorts all matching files > 100 MB *before* taking the top 100 (previously took `lines.prefix(50)` before sorting), with a bounded `FileManager` fallback if Spotlight returns empty.
+   - Replaced `du -sk` in `startCategoryAnalysis()` with parallel `measurePathBytes` updates so each category card populates immediately as it finishes.
+   - Added `canTrash(_:)` (protecting `/`, `/System`, `/Applications`, `~`, etc.) and `moveToTrash(_:)` with cache invalidation and volume refresh.
+2. **Upgraded Space Lens UI (`SpaceLensView.swift`, `ContentView.swift`)**:
+   - Added a dedicated **Apps** tab listing all installed `.app` bundles (`/Applications`, `/Applications/Utilities`, `~/Applications`) with real macOS icons, version badges, exact sizes, proportional usage bars, search filter, sort options, Reveal in Finder, Move to Trash (with confirmation), and 1-click **Uninstall with Leftovers**.
+   - Added **Largest Apps** and **Largest Files (> 100 MB)** preview cards on the **Storage Lens** tab, proportional disk share bars on category cards, working search filters, real macOS file/folder icons, a Hidden Files toggle, and Refresh + Move to Trash controls in **Folder Explorer**.
+   - Renamed the sidebar entry from `"Browse the Disk"` to `"Space Lens"` in `ContentView.swift` for consistency with Overview and the menu bar.
+3. **Verification**:
+   - `./script/typecheck.sh` (`-warnings-as-errors`) passed.
+   - `python3 script/audit_ui_controls.py` passed (`0` inert controls across 137 Swift files).
+   - `./script/test_safety.sh` passed (`379` assertions, including new `spaceAnalyzerTests` for `.app` bundle sizing, symlink deduplication, and protected-path trash guards).
+
 ## 2026-11-20 — Housekeeper 0.30.1 (62): Signature Burgundy + Zero-Idle-Drain UI Magic & Liquid Glass Octopus Icon Restored
 
 Universal bundle rebuilt (`./script/package_release.sh`), installed at `/Applications/Housekeeper.app` (codesign verified, `0.0%` idle CPU), and pushed to `origin/main` on `aghamorad/Housekeeper`.

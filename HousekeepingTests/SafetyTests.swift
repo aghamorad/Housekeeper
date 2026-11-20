@@ -1624,8 +1624,54 @@ struct SafetyTests {
 
         try cleanerInteractionTests(home: home)
         try await uninstallAndBulkQuarantineTests(home: home.resolvingSymlinksInPath())
+        try spaceAnalyzerTests(testRoot: testRoot)
 
-        print("Housekeeping safety, scanner, classification, explanation, last-used age, running-application, quarantine, quarantine-migration, cleanup-history, left-alone-list, working-copy-guard, path-display, office-add-in-audit, two-folder-reconcile, cleaner-scope, and trash-scope tests passed: \(assertionCount) assertions")
+        print("Housekeeping safety, scanner, classification, explanation, last-used age, running-application, quarantine, quarantine-migration, cleanup-history, left-alone-list, working-copy-guard, path-display, office-add-in-audit, two-folder-reconcile, cleaner-scope, space-lens, and trash-scope tests passed: \(assertionCount) assertions")
+    }
+
+    @MainActor
+    private static func spaceAnalyzerTests(testRoot: URL) throws {
+        let fm = FileManager.default
+        let spaceDir = testRoot.appendingPathComponent("SpaceLensFixture", isDirectory: true)
+        let appBundle = spaceDir.appendingPathComponent("BigApp.app/Contents/MacOS", isDirectory: true)
+        let nestedDir = spaceDir.appendingPathComponent("Projects/Sub", isDirectory: true)
+        let symlinkURL = spaceDir.appendingPathComponent("LinkToProjects")
+        try fm.createDirectory(at: appBundle, withIntermediateDirectories: true)
+        try fm.createDirectory(at: nestedDir, withIntermediateDirectories: true)
+
+        let payload = Data(repeating: 0x41, count: 64 * 1024)
+        try payload.write(to: appBundle.appendingPathComponent("BigAppBinary"))
+        try payload.write(to: nestedDir.appendingPathComponent("data.bin"))
+        try? fm.createSymbolicLink(at: symlinkURL, withDestinationURL: spaceDir.appendingPathComponent("Projects"))
+
+        let appBytes = SpaceAnalyzer.measurePathBytes(spaceDir.appendingPathComponent("BigApp.app").path)
+        try expect(appBytes >= 64 * 1024, "SpaceAnalyzer.measurePathBytes must measure inside .app bundles rather than returning 0.")
+
+        let totalBytes = SpaceAnalyzer.measurePathBytes(spaceDir.path)
+        try expect(
+            totalBytes >= 128 * 1024 && totalBytes < 512 * 1024,
+            "SpaceAnalyzer.measurePathBytes must skip symlinks so linked folders are not double-counted (got \(totalBytes))."
+        )
+
+        let analyzer = SpaceAnalyzer.shared
+        let protectedApps = StorageItem(
+            url: URL(fileURLWithPath: "/Applications"),
+            name: "Applications",
+            size: 1000,
+            isDirectory: true,
+            modifiedDate: nil,
+            kind: "Folder"
+        )
+        try expect(!analyzer.canTrash(protectedApps), "SpaceAnalyzer must never allow trashing /Applications.")
+        let safeFile = StorageItem(
+            url: nestedDir.appendingPathComponent("data.bin"),
+            name: "data.bin",
+            size: Int64(payload.count),
+            isDirectory: false,
+            modifiedDate: nil,
+            kind: "BIN"
+        )
+        try expect(analyzer.canTrash(safeFile), "SpaceAnalyzer should allow trashing ordinary user files.")
     }
 
     @MainActor

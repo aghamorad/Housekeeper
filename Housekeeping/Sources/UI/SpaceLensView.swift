@@ -1,19 +1,40 @@
 // Housekeeping — Space Lens & Visual Storage Explorer
 //
 // Modern, intuitive disk visualizer and storage manager.
-// Replaces cramped, confusing scans with instant volume overview, category breakdown,
-// large-file discovery, and fluid folder exploration.
+// Provides instant volume overview, category breakdown, full installed-app sizing,
+// large-file discovery, fluid folder exploration with real sizes, and safe Trash actions.
 
 import SwiftUI
 import AppKit
 
 struct SpaceLensView: View {
     @ObservedObject var analyzer: SpaceAnalyzer = .shared
+    @EnvironmentObject private var appState: AppState
     @Environment(\.uiStyle) private var style
 
     @State private var activeTab: Tab = .categories
     @State private var searchFilter: String = ""
     @State private var largeFileSort: LargeFileSort = .largest
+    @State private var appSort: AppSort = .largest
+    @State private var itemPendingTrash: StorageItem? = nil
+
+    private enum Tab: String, CaseIterable, Identifiable {
+        case categories = "Storage Lens"
+        case apps = "Apps"
+        case largeFiles = "Big & Old Files"
+        case explorer = "Folder Explorer"
+
+        var id: String { rawValue }
+
+        var icon: String {
+            switch self {
+            case .categories: return "circle.grid.cross"
+            case .apps: return "app.badge"
+            case .largeFiles: return "doc.zipper"
+            case .explorer: return "folder.badge.gearshape"
+            }
+        }
+    }
 
     private enum LargeFileSort: String, CaseIterable, Identifiable {
         case largest = "Size (Largest)"
@@ -34,8 +55,53 @@ struct SpaceLensView: View {
         }
     }
 
-    private var sortedLargeFiles: [StorageItem] {
-        analyzer.largeFiles.sorted { lhs, rhs in
+    private enum AppSort: String, CaseIterable, Identifiable {
+        case largest = "Size (Largest)"
+        case smallest = "Size (Smallest)"
+        case newest = "Recently Updated"
+        case name = "Name (A–Z)"
+
+        var id: String { rawValue }
+        var systemImage: String {
+            switch self {
+            case .largest: return "arrow.down.circle"
+            case .smallest: return "arrow.up.circle"
+            case .newest: return "clock.arrow.circlepath"
+            case .name: return "textformat.size.smaller"
+            }
+        }
+    }
+
+    private var filteredApps: [StorageItem] {
+        let query = searchFilter.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = query.isEmpty
+            ? analyzer.installedApps
+            : analyzer.installedApps.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        return base.sorted { lhs, rhs in
+            if lhs.isMeasuring != rhs.isMeasuring { return !lhs.isMeasuring && rhs.isMeasuring }
+            switch appSort {
+            case .largest:
+                if lhs.size != rhs.size { return lhs.size > rhs.size }
+            case .smallest:
+                if lhs.size != rhs.size { return lhs.size < rhs.size }
+            case .newest:
+                if let l = lhs.modifiedDate, let r = rhs.modifiedDate, l != r { return l > r }
+            case .name:
+                break
+            }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    private var filteredLargeFiles: [StorageItem] {
+        let query = searchFilter.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = query.isEmpty
+            ? analyzer.largeFiles
+            : analyzer.largeFiles.filter {
+                $0.name.localizedCaseInsensitiveContains(query)
+                || $0.parentDisplayPath.localizedCaseInsensitiveContains(query)
+            }
+        return base.sorted { lhs, rhs in
             switch largeFileSort {
             case .largest:
                 if lhs.size != rhs.size { return lhs.size > rhs.size }
@@ -55,32 +121,29 @@ struct SpaceLensView: View {
         }
     }
 
-    private enum Tab: String, CaseIterable, Identifiable {
-        case categories = "Storage Lens"
-        case largeFiles = "Big & Old Files"
-        case explorer = "Folder Explorer"
-
-        var id: String { rawValue }
-
-        var icon: String {
-            switch self {
-            case .categories: return "circle.grid.cross"
-            case .largeFiles: return "doc.zipper"
-            case .explorer: return "folder.badge.gearshape"
-            }
-        }
+    private var filteredFolderItems: [StorageItem] {
+        let query = searchFilter.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return analyzer.currentFolderItems }
+        return analyzer.currentFolderItems.filter { $0.name.localizedCaseInsensitiveContains(query) }
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
+            VStack(alignment: .leading, spacing: 24) {
                 header
                 diskCapacityHero
+
+                if let err = analyzer.trashError {
+                    errorBanner(err)
+                }
+
                 tabPicker
 
                 switch activeTab {
                 case .categories:
                     categoriesSection
+                case .apps:
+                    appsSection
                 case .largeFiles:
                     largeFilesSection
                 case .explorer:
@@ -97,6 +160,28 @@ struct SpaceLensView: View {
             if analyzer.categories.isEmpty {
                 analyzer.startCategoryAnalysis()
             }
+            if analyzer.installedApps.isEmpty {
+                analyzer.loadApps()
+            }
+        }
+        .alert(
+            "Move to Trash?",
+            isPresented: Binding(
+                get: { itemPendingTrash != nil },
+                set: { if !$0 { itemPendingTrash = nil } }
+            ),
+            presenting: itemPendingTrash
+        ) { item in
+            Button("Move to Trash", role: .destructive) {
+                let target = item
+                itemPendingTrash = nil
+                Task { await analyzer.moveToTrash(target) }
+            }
+            Button("Cancel", role: .cancel) {
+                itemPendingTrash = nil
+            }
+        } message: { item in
+            Text("\"\(item.name)\" (\(item.humanSize)) will be moved to the Trash. You can restore it from Trash later.")
         }
     }
 
@@ -112,7 +197,7 @@ struct SpaceLensView: View {
                     Text("Space Lens & Storage")
                         .font(style.isRetro ? style.titleFont : .system(size: 28, weight: .bold))
                 }
-                Text("Instant visual breakdown of your Mac's storage, large files, and heaviest folders.")
+                Text("See what is using your Mac's storage — apps, folders, and large files — and clear space safely.")
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
             }
@@ -121,12 +206,33 @@ struct SpaceLensView: View {
                 title: "Analyze Again",
                 systemImage: "arrow.clockwise",
                 isEnabled: !analyzer.isAnalyzing,
-                help: "Recalculate volume capacity and categorize space"
+                help: "Recalculate volume capacity, apps, categories, and large files"
             ) {
                 analyzer.refreshVolumeInfo()
                 analyzer.startCategoryAnalysis()
+                analyzer.loadApps(forceRefresh: true)
+                analyzer.loadFolder(path: analyzer.currentFolderPath, forceRefresh: true)
             }
         }
+    }
+
+    private func errorBanner(_ message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.system(size: 13))
+            Spacer()
+            Button("Dismiss") {
+                analyzer.trashError = nil
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(style.accent)
+        }
+        .padding(12)
+        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.3), lineWidth: 1))
     }
 
     // MARK: - Disk Hero Bar
@@ -135,7 +241,7 @@ struct SpaceLensView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Macintosh HD")
+                    Text(analyzer.volumeName)
                         .font(.system(size: 16, weight: .bold))
                     Text("\(humanSize(analyzer.usedDiskBytes)) used of \(humanSize(analyzer.totalDiskBytes))")
                         .font(.system(size: 13))
@@ -147,19 +253,17 @@ struct SpaceLensView: View {
                     .foregroundStyle(.green)
             }
 
-            // Visual Segmented Bar
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color.secondary.opacity(0.15))
                         .frame(height: 16)
 
-                    HStack(spacing: 2) {
-                        let usedWidth = geo.size.width * CGFloat(analyzer.usedFraction)
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(LinearGradient(colors: [style.accent, style.accent.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
-                            .frame(width: max(4, usedWidth), height: 16)
-                    }
+                    let usedWidth = geo.size.width * CGFloat(analyzer.usedFraction)
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(LinearGradient(colors: [style.accent, style.accent.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(4, usedWidth), height: 16)
+                        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: analyzer.usedFraction)
                 }
             }
             .frame(height: 16)
@@ -187,6 +291,7 @@ struct SpaceLensView: View {
                 let isSelected = activeTab == tab
                 Button {
                     activeTab = tab
+                    searchFilter = ""
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: tab.icon)
@@ -205,65 +310,181 @@ struct SpaceLensView: View {
         }
     }
 
+    // MARK: - Search Field
+
+    private func searchBar(placeholder: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            TextField(placeholder, text: $searchFilter)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+            if !searchFilter.isEmpty {
+                Button {
+                    searchFilter = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: 260)
+        .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(style.border, lineWidth: 1))
+    }
+
     // MARK: - Categories Section
 
     private var categoriesSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             Text("Storage by Category")
                 .font(.system(size: 16, weight: .semibold))
 
-            if analyzer.isAnalyzing && analyzer.categories.isEmpty {
-                HStack(spacing: 12) {
-                    ProgressView().controlSize(.small)
-                    Text("Measuring storage categories…")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 14)], spacing: 14) {
+                ForEach(analyzer.categories) { cat in
+                    categoryCard(cat)
                 }
-                .padding(20)
-            } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 14)], spacing: 14) {
-                    ForEach(analyzer.categories) { cat in
-                        categoryCard(cat)
-                    }
+            }
+
+            // Quick Top Space Hogs Preview
+            HStack(alignment: .top, spacing: 16) {
+                topPreviewCard(
+                    title: "Largest Apps",
+                    subtitle: "See all \(analyzer.installedApps.count) apps",
+                    items: Array(analyzer.installedApps.prefix(5)),
+                    isLoading: analyzer.isLoadingApps && analyzer.installedApps.isEmpty
+                ) {
+                    activeTab = .apps
+                }
+
+                topPreviewCard(
+                    title: "Largest Files (> 100 MB)",
+                    subtitle: "See all \(analyzer.largeFiles.count) files",
+                    items: Array(analyzer.largeFiles.prefix(5)),
+                    isLoading: analyzer.isAnalyzing && analyzer.largeFiles.isEmpty
+                ) {
+                    activeTab = .largeFiles
                 }
             }
         }
     }
 
-    private func categoryCard(_ cat: StorageCategory) -> some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(catColor(cat.colorName).opacity(0.15))
-                    .frame(width: 44, height: 44)
-                Image(systemName: cat.icon)
-                    .font(.system(size: 18))
-                    .foregroundStyle(catColor(cat.colorName))
+    private func topPreviewCard(
+        title: String,
+        subtitle: String,
+        items: [StorageItem],
+        isLoading: Bool,
+        onSeeAll: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 14, weight: .bold))
+                Spacer()
+                Button(subtitle) {
+                    onSeeAll()
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(style.accent)
             }
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(cat.name)
-                    .font(.system(size: 14, weight: .bold))
-                if cat.isCalculating {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.mini)
-                        Text("Measuring…")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Text(cat.humanSize)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+            if isLoading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Scanning…")
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
+                .padding(.vertical, 12)
+            } else if items.isEmpty {
+                Text("Nothing large found.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 12)
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(items) { item in
+                        HStack(spacing: 10) {
+                            Image(nsImage: iconForItem(item))
+                                .resizable()
+                                .frame(width: 20, height: 20)
+                            Text(item.name)
+                                .font(.system(size: 12, weight: .medium))
+                                .lineLimit(1)
+                            Spacer()
+                            if item.isMeasuring {
+                                ProgressView().controlSize(.mini)
+                            } else {
+                                Text(item.humanSize)
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(style.border, lineWidth: 1))
+    }
+
+    private func categoryCard(_ cat: StorageCategory) -> some View {
+        let share = analyzer.usedDiskBytes > 0 ? min(1.0, Double(cat.size) / Double(analyzer.usedDiskBytes)) : 0
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(catColor(cat.colorName).opacity(0.15))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: cat.icon)
+                        .font(.system(size: 18))
+                        .foregroundStyle(catColor(cat.colorName))
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(cat.name)
+                        .font(.system(size: 14, weight: .bold))
+                    if cat.isCalculating && cat.size == 0 {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.mini)
+                            Text("Measuring…")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text(cat.humanSize)
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.tertiary)
+                    .padding(8)
             }
 
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(.tertiary)
-                .padding(8)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.secondary.opacity(0.12)).frame(height: 4)
+                    Capsule()
+                        .fill(catColor(cat.colorName).opacity(0.75))
+                        .frame(width: max(4, geo.size.width * CGFloat(share)), height: 4)
+                }
+            }
+            .frame(height: 4)
         }
         .padding(16)
         .contentShape(Rectangle())
@@ -287,38 +508,117 @@ struct SpaceLensView: View {
 
     private func quickJumpToCategory(_ id: String) {
         let home = FileManager.default.homeDirectoryForCurrentUser
+        searchFilter = ""
+        if id == "apps" {
+            activeTab = .apps
+            return
+        }
         activeTab = .explorer
         switch id {
         case "downloads":
-            analyzer.loadFolder(path: home.appendingPathComponent("Downloads").path)
+            analyzer.navigateTo(path: home.appendingPathComponent("Downloads").path)
         case "dev":
-            analyzer.loadFolder(path: home.appendingPathComponent("Library/Caches").path)
+            analyzer.navigateTo(path: home.appendingPathComponent("Library/Caches").path)
         case "media":
-            analyzer.loadFolder(path: home.appendingPathComponent("Pictures").path)
-        case "apps":
-            analyzer.loadFolder(path: "/Applications")
+            analyzer.navigateTo(path: home.appendingPathComponent("Pictures").path)
         case "trash":
-            analyzer.loadFolder(path: home.appendingPathComponent(".Trash").path)
+            analyzer.navigateTo(path: home.appendingPathComponent(".Trash").path)
         case "docs":
-            analyzer.loadFolder(path: home.appendingPathComponent("Documents").path)
+            analyzer.navigateTo(path: home.appendingPathComponent("Documents").path)
         default:
-            analyzer.loadFolder(path: home.path)
+            analyzer.navigateTo(path: home.path)
+        }
+    }
+
+    // MARK: - Apps Section
+
+    private var appsSection: some View {
+        let apps = filteredApps
+        let totalAppsBytes = apps.reduce(Int64(0)) { $0 + $1.size }
+        let maxAppBytes = max(1, apps.map(\.size).max() ?? 1)
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Installed Applications")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("\(apps.count) apps · \(humanSize(totalAppsBytes)) total")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+
+                if analyzer.isLoadingApps {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text("Measuring apps…")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                searchBar(placeholder: "Filter apps…")
+
+                Menu {
+                    Picker("Sort apps", selection: $appSort) {
+                        ForEach(AppSort.allCases) { opt in
+                            Label(opt.rawValue, systemImage: opt.systemImage).tag(opt)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: appSort.systemImage)
+                            .foregroundStyle(style.accent)
+                        Text(appSort.rawValue)
+                            .font(.system(size: 11, weight: .medium))
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 8))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(style.border, lineWidth: 1))
+                }
+                .menuStyle(.borderlessButton)
+
+                ThemeButton(title: "Uninstaller", systemImage: "xmark.app", help: "Open full App Uninstaller to remove apps with their leftover support files") {
+                    appState.showUninstaller = true
+                }
+            }
+
+            if apps.isEmpty && !analyzer.isLoadingApps {
+                emptyStateCard(icon: "app.badge", text: searchFilter.isEmpty ? "No applications found." : "No apps match \"\(searchFilter)\".")
+            } else {
+                VStack(spacing: 1) {
+                    ForEach(apps) { item in
+                        storageItemRow(item, maxReferenceBytes: maxAppBytes, showParentPath: false)
+                    }
+                }
+                .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(style.border, lineWidth: 1))
+            }
         }
     }
 
     // MARK: - Large Files Section
 
     private var largeFilesSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
+        let files = filteredLargeFiles
+        let maxFileBytes = max(1, files.map(\.size).max() ?? 1)
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Large & Forgotten Files")
                         .font(.system(size: 16, weight: .semibold))
-                    Text("Files over 200 MB in your user folders that may be ready for archival or removal.")
+                    Text("Top files over 100 MB in your user folders (\(files.count) shown).")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+
+                searchBar(placeholder: "Filter files or folder…")
 
                 Menu {
                     Picker("Organize by", selection: $largeFileSort) {
@@ -338,32 +638,23 @@ struct SpaceLensView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
+                    .padding(.vertical, 6)
                     .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 6))
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(style.border, lineWidth: 1))
                 }
                 .menuStyle(.borderlessButton)
-
-                Text("\(analyzer.largeFiles.count) items found")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
             }
 
-            if analyzer.largeFiles.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "checkmark.seal")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.green)
-                    Text("No excessively large loose files detected.")
-                        .font(.system(size: 13, weight: .medium))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(32)
-                .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 12))
+            if files.isEmpty {
+                emptyStateCard(
+                    icon: "checkmark.seal",
+                    iconColor: .green,
+                    text: searchFilter.isEmpty ? "No files over 100 MB detected." : "No large files match \"\(searchFilter)\"."
+                )
             } else {
                 VStack(spacing: 1) {
-                    ForEach(sortedLargeFiles) { item in
-                        storageItemRow(item)
+                    ForEach(files) { item in
+                        storageItemRow(item, maxReferenceBytes: maxFileBytes, showParentPath: true)
                     }
                 }
                 .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 12))
@@ -375,7 +666,10 @@ struct SpaceLensView: View {
     // MARK: - Folder Explorer Section
 
     private var folderExplorerSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let items = filteredFolderItems
+        let maxFolderBytes = max(1, items.map(\.size).max() ?? 1)
+
+        return VStack(alignment: .leading, spacing: 14) {
             // Navigation Breadcrumbs & Controls
             HStack(spacing: 8) {
                 ThemeButton(
@@ -411,6 +705,23 @@ struct SpaceLensView: View {
 
                 Spacer()
 
+                if let prog = analyzer.folderMeasureProgress {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text(prog)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                ThemeButton(
+                    title: "Refresh",
+                    systemImage: "arrow.clockwise",
+                    help: "Recalculate sizes in this folder"
+                ) {
+                    analyzer.loadFolder(path: analyzer.currentFolderPath, forceRefresh: true)
+                }
+
                 ThemeButton(
                     title: "Finder",
                     systemImage: "macwindow"
@@ -419,25 +730,48 @@ struct SpaceLensView: View {
                 }
             }
 
-            // Quick Location Chips
+            // Quick Location Chips + Search + Hidden Toggle
             HStack(spacing: 8) {
-                locationChip("Home", path: FileManager.default.homeDirectoryForCurrentUser.path)
-                locationChip("Downloads", path: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads").path)
+                let home = FileManager.default.homeDirectoryForCurrentUser
+                locationChip("Home", path: home.path)
                 locationChip("Applications", path: "/Applications")
-                locationChip("Caches", path: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches").path)
-                locationChip("C3PO", path: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("C3PO").path)
+                locationChip("Downloads", path: home.appendingPathComponent("Downloads").path)
+                locationChip("Caches", path: home.appendingPathComponent("Library/Caches").path)
+                locationChip("Documents", path: home.appendingPathComponent("Documents").path)
+                locationChip("C3PO", path: home.appendingPathComponent("C3PO").path)
+                locationChip("Trash", path: home.appendingPathComponent(".Trash").path)
+
+                Spacer()
+
+                Toggle("Hidden", isOn: Binding(
+                    get: { analyzer.showHiddenFiles },
+                    set: { newVal in
+                        analyzer.showHiddenFiles = newVal
+                        analyzer.loadFolder(path: analyzer.currentFolderPath)
+                    }
+                ))
+                .toggleStyle(.checkbox)
+                .font(.system(size: 11))
+
+                searchBar(placeholder: "Filter folder…")
+            }
+
+            if analyzer.currentFolderTotalBytes > 0 {
+                Text("Measured total in this folder: \(humanSize(analyzer.currentFolderTotalBytes)) (\(items.count) items)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
             }
 
             // Items List
-            if analyzer.currentFolderItems.isEmpty {
-                Text("Folder is empty.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .padding(20)
+            if items.isEmpty {
+                emptyStateCard(
+                    icon: "folder",
+                    text: searchFilter.isEmpty ? "Folder is empty." : "No items match \"\(searchFilter)\"."
+                )
             } else {
                 VStack(spacing: 1) {
-                    ForEach(analyzer.currentFolderItems) { item in
-                        storageItemRow(item)
+                    ForEach(items) { item in
+                        storageItemRow(item, maxReferenceBytes: maxFolderBytes, showParentPath: false)
                     }
                 }
                 .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 12))
@@ -448,7 +782,7 @@ struct SpaceLensView: View {
 
     private func locationChip(_ title: String, path: String) -> some View {
         Button {
-            analyzer.loadFolder(path: path)
+            analyzer.navigateTo(path: path)
         } label: {
             Text(title)
                 .font(.system(size: 11, weight: .medium))
@@ -460,28 +794,95 @@ struct SpaceLensView: View {
         .buttonStyle(.plain)
     }
 
-    private func storageItemRow(_ item: StorageItem) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: item.isDirectory ? "folder.fill" : fileIcon(item.name))
-                .font(.system(size: 16))
-                .foregroundStyle(item.isDirectory ? style.accent : .secondary)
-                .frame(width: 24)
+    private func emptyStateCard(icon: String, iconColor: Color = .secondary, text: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 28))
+                .foregroundStyle(iconColor)
+            Text(text)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(32)
+        .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(style.border, lineWidth: 1))
+    }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-                Text(item.kind)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+    // MARK: - Item Row
+
+    private func storageItemRow(_ item: StorageItem, maxReferenceBytes: Int64, showParentPath: Bool) -> some View {
+        let share = maxReferenceBytes > 0 && item.size > 0 ? min(1.0, Double(item.size) / Double(maxReferenceBytes)) : 0
+
+        return HStack(spacing: 12) {
+            Image(nsImage: iconForItem(item))
+                .resizable()
+                .frame(width: 24, height: 24)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(item.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                    if let ver = item.appVersion, !ver.isEmpty {
+                        Text("v\(ver)")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.12), in: Capsule())
+                    }
+                }
+
+                HStack(spacing: 6) {
+                    Text(item.kind)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    if showParentPath, !item.parentDisplayPath.isEmpty {
+                        Text("· \(item.parentDisplayPath)")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    if let mod = item.modifiedDate {
+                        Text("· \(mod.formatted(date: .abbreviated, time: .omitted))")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
             }
 
             Spacer()
 
+            // Proportional visual bar
             if item.size > 0 {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.secondary.opacity(0.12)).frame(height: 5)
+                        Capsule()
+                            .fill(style.accent.opacity(0.7))
+                            .frame(width: max(3, geo.size.width * CGFloat(share)), height: 5)
+                    }
+                }
+                .frame(width: 80, height: 5)
+            }
+
+            // Size or Measuring indicator
+            if item.isMeasuring && item.size == 0 {
+                HStack(spacing: 5) {
+                    ProgressView().controlSize(.mini)
+                    Text("Measuring…")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(minWidth: 85, alignment: .trailing)
+            } else {
                 Text(item.humanSize)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .foregroundStyle(item.size > 0 ? .primary : .tertiary)
+                    .frame(minWidth: 85, alignment: .trailing)
             }
 
             HStack(spacing: 4) {
@@ -495,6 +896,19 @@ struct SpaceLensView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Reveal in Finder")
+
+                if analyzer.canTrash(item) {
+                    Button {
+                        itemPendingTrash = item
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.red.opacity(0.8))
+                            .padding(6)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Move to Trash")
+                }
 
                 if item.isDirectory {
                     Button {
@@ -522,7 +936,7 @@ struct SpaceLensView: View {
             Button {
                 HousekeeperTopic.ask(.diskItem(name: item.name, path: item.url.path, size: item.size, isDirectory: item.isDirectory))
             } label: {
-                Label("Ask the Housekeeper About This \(item.isDirectory ? "Folder" : "File")", systemImage: "sparkles")
+                Label("Ask the Housekeeper About This \(item.isDirectory ? "Folder" : "Item")", systemImage: "sparkles")
             }
 
             Divider()
@@ -540,16 +954,28 @@ struct SpaceLensView: View {
                     Label("Open Folder in Space Lens", systemImage: "arrow.right.circle")
                 }
             }
+
+            if item.isPackage && item.url.pathExtension.lowercased() == "app" {
+                Button {
+                    appState.showUninstaller = true
+                } label: {
+                    Label("Uninstall with Leftovers…", systemImage: "xmark.app")
+                }
+            }
+
+            if analyzer.canTrash(item) {
+                Divider()
+                Button(role: .destructive) {
+                    itemPendingTrash = item
+                } label: {
+                    Label("Move to Trash", systemImage: "trash")
+                }
+            }
         }
     }
 
-    private func fileIcon(_ name: String) -> String {
-        let ext = (name as NSString).pathExtension.lowercased()
-        if ["dmg", "iso", "zip", "tar", "gz", "pkg"].contains(ext) { return "doc.zipper" }
-        if ["mp4", "mkv", "mov"].contains(ext) { return "film" }
-        if ["mp3", "m4a", "flac"].contains(ext) { return "music.note" }
-        if ["pdf", "doc", "docx", "txt", "md"].contains(ext) { return "doc.text" }
-        return "doc"
+    private func iconForItem(_ item: StorageItem) -> NSImage {
+        NSWorkspace.shared.icon(forFile: item.url.path)
     }
 
     private func humanSize(_ bytes: Int64) -> String {

@@ -536,7 +536,7 @@ private struct JobBar: View {
                             sidebarJob(job, customTitle: "Background Activity", customIcon: "list.bullet.rectangle")
                         }
                         if let job = allJobs.first(where: { $0.id == "browse-the-disk" }) {
-                            sidebarJob(job, customTitle: "Browse the Disk", customIcon: "internaldrive")
+                            sidebarJob(job, customTitle: "Space Lens", customIcon: "internaldrive")
                         }
                     }
 

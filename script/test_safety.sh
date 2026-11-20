@@ -53,6 +53,7 @@ mkdir -p "$BUILD_DIR/ModuleCache"
   "$ROOT_DIR/Housekeeping/Sources/Reconcile/ReconcileModels.swift" \
   "$ROOT_DIR/Housekeeping/Sources/Reconcile/ContentIdentity.swift" \
   "$ROOT_DIR/Housekeeping/Sources/Reconcile/ReconcileEngine.swift" \
+  "$ROOT_DIR/Housekeeping/Sources/Disk/SpaceAnalyzer.swift" \
   "$ROOT_DIR/HousekeepingTests/SafetyTests.swift" \
   -o "$BUILD_DIR/HousekeepingSafetyTests"
 
