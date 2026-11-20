@@ -1,3 +1,20 @@
+## 2026-11-20 — Housekeeper 0.30.1 (62): Signature Burgundy + Zero-Idle-Drain UI Magic & Liquid Glass Octopus Icon Restored
+
+Universal bundle rebuilt (`./script/package_release.sh`), installed at `/Applications/Housekeeper.app` (codesign verified, `0.0%` idle CPU), and pushed to `origin/main` on `aghamorad/Housekeeper`.
+
+What went into it:
+1. **Liquid Glass Octopus Dock Icon Restored & Bad Cartoon Icon Permanently Removed**:
+   - Permanently removed `Housekeeping/Resources/BenignMonster/housekeeper_octopus_maid.png` and `housekeeper_octopus_maid_expressive.png` (copies preserved in `~/.Trash/`) so the 3D cartoon room icon can never re-enter builds.
+   - Restored `script/render_app_icon.swift` to the pearlescent Liquid Glass squircle box renderer (curved glass reflection + subtle drop shadow + centered `mascot.png`) and updated `generate_app_icon.sh`, `package_release.sh`, `verify_release.py`, and `ContentView.swift` to use `Housekeeping/Resources/BenignMonster/mascot.png`.
+   - Regenerated checked-in `Housekeeping/Resources/AppIcon.icns` and `Housekeeping/Resources/AppIcon.png` directly from `mascot.png`.
+2. **Signature Burgundy Identity Preserved + Zero-Idle-Drain UI Magic**:
+   - Restored Housekeeper's signature burgundy palette (`HousekeepingPalette` and `HousekeepingInk` + dark-aqua burgundy menu bar popover).
+   - Added 100% event-driven animations (zero background timers, `0.0%` CPU parked, Reduce Motion respected):
+     - Gliding burgundy-glass sidebar selection indicator (`matchedGeometryEffect` spring).
+     - Smooth workspace screen crossfade & micro-slide transition.
+     - Tactile hover chevron nudge, icon scale, spring-animated storage bar, and hover-tilting octopus mascot in `OverviewView`.
+     - Event-driven burgundy Liquid-Glass `SpeedArcGauge` in `SpeedTestView` with logarithmic spring sweep as live Mbps ticks arrive.
+
 ## 2026-11-20 — Housekeeper 0.30.0 (61): Native macOS Interface Overhaul, Silent Menu-Bar Login Startup & Built-In Speed Test
 
 Universal bundle rebuilt (`./script/package_release.sh`), installed at `/Applications/Housekeeper.app` (codesign verified, `0.0%` idle CPU), and pushed to `origin/main` on `aghamorad/Housekeeper`.

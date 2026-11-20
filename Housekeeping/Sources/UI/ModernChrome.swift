@@ -20,19 +20,32 @@ struct NativeVisualEffectView: NSViewRepresentable {
     }
 }
 
-/// Native macOS window and sidebar backdrop — no tinted washes or radial glows.
+/// Signature burgundy backdrop with subtle studio lighting and zero idle timers.
 struct HousekeepingBackdrop: View {
     let style: UIStyle
+    @Environment(\.colorScheme) private var scheme
     var sidebar = false
 
     var body: some View {
-        Group {
-            if style.isRetro {
-                style.windowBackground
-            } else if sidebar {
-                NativeVisualEffectView(material: .sidebar, blendingMode: .behindWindow)
-            } else {
-                style.windowBackground
+        let base = sidebar ? HousekeepingPalette.sidebar : style.windowBackground
+        ZStack {
+            base
+            if !style.isRetro {
+                LinearGradient(
+                    colors: [
+                        style.accent.opacity(sidebar ? 0.04 : 0.065),
+                        .clear,
+                        .black.opacity(scheme == .dark ? 0.14 : 0.02)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                RadialGradient(
+                    colors: [style.accentShaded.opacity(sidebar ? 0.05 : 0.12), .clear],
+                    center: .topTrailing,
+                    startRadius: 0,
+                    endRadius: 680
+                )
             }
         }
         .allowsHitTesting(false)
@@ -42,6 +55,7 @@ struct HousekeepingBackdrop: View {
 
 private struct HousekeepingCardChrome: ViewModifier {
     @Environment(\.uiStyle) private var style
+    @Environment(\.colorScheme) private var scheme
     let radius: CGFloat
     let highlighted: Bool
     let prominent: Bool
@@ -62,13 +76,38 @@ private struct HousekeepingCardChrome: ViewModifier {
     private func modern(_ content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return content
-            .background(shape.fill(style.rowBackground))
+            .background {
+                shape.fill(style.rowBackground)
+                shape.fill(LinearGradient(
+                    colors: [
+                        style.accent.opacity(prominent ? 0.09 : (highlighted ? 0.08 : 0.025)),
+                        .clear,
+                        .black.opacity(scheme == .dark ? 0.06 : 0.01)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
+            }
             .overlay {
                 shape.strokeBorder(
-                    highlighted ? style.accent.opacity(0.45) : Color.primary.opacity(prominent ? 0.11 : 0.08),
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(scheme == .dark ? (highlighted ? 0.22 : 0.13) : 0.85),
+                            style.accent.opacity(highlighted ? 0.38 : 0.10),
+                            Color.primary.opacity(0.05)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
                     lineWidth: highlighted ? 1 : 0.75
                 )
             }
+            .shadow(
+                color: .black.opacity(scheme == .dark ? (prominent ? 0.22 : 0.12) : 0.04),
+                radius: prominent ? 16 : 8,
+                x: 0,
+                y: prominent ? 8 : 4
+            )
     }
 }
 
@@ -103,31 +142,66 @@ struct HousekeepingButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let pressed = configuration.isPressed
-        let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
+        let lifted = hovering && enabled && !reduceMotion
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
         return configuration.label
             .font(style.labelFont)
             .foregroundStyle(kind == .primary && enabled ? Color.white : style.text)
             .padding(.horizontal, kind == .quiet ? 9 : 13)
-            .padding(.vertical, 6)
+            .padding(.vertical, 7)
             .background {
                 switch kind {
                 case .primary:
-                    shape.fill(style.accentShaded.opacity(enabled ? (pressed ? 0.85 : 1.0) : 0.30))
+                    shape.fill(style.accentShaded.opacity(enabled ? 1.0 : 0.28))
+                    shape.fill(LinearGradient(
+                        colors: [.white.opacity(hovering ? 0.22 : 0.10), .clear, .black.opacity(0.10)],
+                        startPoint: .top, endPoint: .bottom
+                    ))
                 case .secondary:
-                    shape.fill(Color(NSColor.controlBackgroundColor))
-                        .overlay(shape.fill(Color.primary.opacity(pressed ? 0.08 : (hovering ? 0.04 : 0))))
+                    shape.fill(Color.primary.opacity(hovering ? 0.10 : 0.045))
                 case .quiet:
-                    shape.fill(Color.primary.opacity(pressed ? 0.10 : (hovering ? 0.06 : 0)))
+                    shape.fill(Color.primary.opacity(hovering ? 0.08 : 0))
                 }
             }
             .overlay {
-                if kind == .secondary {
-                    shape.strokeBorder(Color.primary.opacity(hovering ? 0.18 : 0.12), lineWidth: 0.75)
+                if kind != .quiet {
+                    shape.strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                .white.opacity(kind == .primary ? (hovering ? 0.40 : 0.24) : 0.14),
+                                Color.primary.opacity(0.06)
+                            ],
+                            startPoint: .top, endPoint: .bottom
+                        ),
+                        lineWidth: 0.75
+                    )
                 }
             }
-            .opacity(enabled ? 1 : 0.48)
-            .scaleEffect(pressed && !reduceMotion ? 0.98 : 1)
+            .overlay {
+                if !reduceMotion {
+                    shape
+                        .fill(LinearGradient(
+                            colors: [.clear, .white.opacity(kind == .primary ? 0.18 : 0.09), .clear],
+                            startPoint: .leading, endPoint: .trailing
+                        ))
+                        .offset(x: hovering ? 24 : -36)
+                        .blendMode(.softLight)
+                        .clipShape(shape)
+                        .allowsHitTesting(false)
+                }
+            }
+            .shadow(
+                color: kind == .primary && enabled
+                    ? style.accentShaded.opacity(lifted ? 0.42 : 0.18)
+                    : .black.opacity(lifted ? 0.12 : 0.04),
+                radius: lifted ? 10 : 4,
+                y: lifted ? 3 : 2
+            )
+            .scaleEffect(pressed && !reduceMotion ? 0.965 : (lifted ? 1.015 : 1))
+            .offset(y: pressed ? 0.5 : (lifted ? -0.5 : 0))
+            .opacity(enabled ? 1 : 0.45)
             .animation(HousekeepingMotion.press, value: pressed)
+            .animation(HousekeepingMotion.hover, value: hovering)
             .onHover { inside in hovering = inside && enabled }
             .onChange(of: pressed) { isPressed in
                 guard isPressed, enabled else { return }

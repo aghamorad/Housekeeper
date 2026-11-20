@@ -433,6 +433,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
+        popover.appearance = NSAppearance(named: .darkAqua)
         popover.contentViewController = NSHostingController(rootView: root)
         popover.delegate = self
         self.popover = popover

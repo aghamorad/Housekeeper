@@ -105,28 +105,58 @@ struct SpeedTestView: View {
     }
 
     private var metricsRow: some View {
-        HStack(spacing: 12) {
-            metricTile(
-                title: "Download",
-                symbol: "arrow.down.circle",
-                value: formatSpeed(engine.liveDownloadMbps ?? engine.latestResult?.downloadMbps),
-                unit: "Mbps",
-                active: engine.phase == .measuringDownload
+        HStack(alignment: .center, spacing: 14) {
+            SpeedArcGauge(
+                mbps: activeGaugeMbps,
+                phaseLabel: gaugePhaseCaption,
+                isRunning: engine.isRunning
             )
-            metricTile(
-                title: "Upload",
-                symbol: "arrow.up.circle",
-                value: formatSpeed(engine.liveUploadMbps ?? engine.latestResult?.uploadMbps),
-                unit: "Mbps",
-                active: engine.phase == .measuringUpload
-            )
-            metricTile(
-                title: "Ping",
-                symbol: "timer",
-                value: formatPing(engine.livePingMs ?? engine.latestResult?.pingMs),
-                unit: "ms",
-                active: engine.phase == .measuringPing
-            )
+            .frame(width: 178, height: 152)
+            .padding(12)
+            .housekeepingCard(cornerRadius: 14, highlighted: engine.isRunning)
+
+            VStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    metricTile(
+                        title: "Download",
+                        symbol: "arrow.down.circle",
+                        value: formatSpeed(engine.liveDownloadMbps ?? engine.latestResult?.downloadMbps),
+                        unit: "Mbps",
+                        active: engine.phase == .measuringDownload
+                    )
+                    metricTile(
+                        title: "Upload",
+                        symbol: "arrow.up.circle",
+                        value: formatSpeed(engine.liveUploadMbps ?? engine.latestResult?.uploadMbps),
+                        unit: "Mbps",
+                        active: engine.phase == .measuringUpload
+                    )
+                }
+                metricTile(
+                    title: "Ping",
+                    symbol: "timer",
+                    value: formatPing(engine.livePingMs ?? engine.latestResult?.pingMs),
+                    unit: "ms",
+                    active: engine.phase == .measuringPing
+                )
+            }
+        }
+    }
+
+    private var activeGaugeMbps: Double {
+        if engine.phase == .measuringUpload, let up = engine.liveUploadMbps { return up }
+        if let down = engine.liveDownloadMbps { return down }
+        return engine.latestResult?.downloadMbps ?? 0
+    }
+
+    private var gaugePhaseCaption: String {
+        switch engine.phase {
+        case .measuringPing: return "PING"
+        case .measuringDownload: return "DOWNLOAD"
+        case .measuringUpload: return "UPLOAD"
+        case .runningAppleQuality: return "TESTING"
+        case .finished: return "DOWNLOAD"
+        default: return engine.latestResult != nil ? "LAST TEST" : "READY"
         }
     }
 
@@ -290,5 +320,58 @@ struct SpeedTestView: View {
     private func formatPing(_ value: Double?) -> String {
         guard let value else { return "—" }
         return String(format: "%.0f", value)
+    }
+}
+
+/// Event-driven burgundy liquid-glass arc gauge. Sweeps smoothly via SwiftUI
+/// springs whenever a new Mbps sample arrives and draws zero frames when idle.
+private struct SpeedArcGauge: View {
+    let mbps: Double
+    let phaseLabel: String
+    let isRunning: Bool
+    @Environment(\.uiStyle) private var style
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Logarithmic visual mapping so both 10 Mbps and 500 Mbps read clearly.
+    private var normalized: Double {
+        guard mbps > 0 else { return 0 }
+        let capped = min(mbps, 1000.0)
+        return min(1.0, log10(1.0 + capped) / log10(1001.0))
+    }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .trim(from: 0.14, to: 0.86)
+                .stroke(style.border.opacity(0.35), style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                .rotationEffect(.degrees(90))
+
+            Circle()
+                .trim(from: 0.14, to: 0.14 + 0.72 * normalized)
+                .stroke(
+                    LinearGradient(colors: [style.accentShaded, style.accent], startPoint: .leading, endPoint: .trailing),
+                    style: StrokeStyle(lineWidth: 10, lineCap: .round)
+                )
+                .rotationEffect(.degrees(90))
+                .shadow(color: style.accent.opacity(isRunning ? 0.35 : 0.12), radius: isRunning ? 8 : 3)
+                .animation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.82), value: normalized)
+
+            VStack(spacing: 2) {
+                Text(phaseLabel)
+                    .font(.system(size: 9.5, weight: .bold))
+                    .tracking(1.1)
+                    .foregroundStyle(style.secondaryText)
+                Text(mbps > 0 ? (mbps >= 100 ? String(format: "%.0f", mbps) : String(format: "%.1f", mbps)) : "—")
+                    .font(.system(size: 30, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(style.text)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: mbps)
+                Text("Mbps")
+                    .font(.system(size: 11))
+                    .foregroundStyle(style.secondaryText)
+            }
+            .offset(y: 4)
+        }
+        .padding(8)
     }
 }

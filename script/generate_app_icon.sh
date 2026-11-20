@@ -5,7 +5,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 OUT_DIR="${1:-$ROOT_DIR/.build/generated-app-icon}"
-MASCOT="$ROOT_DIR/Housekeeping/Resources/BenignMonster/housekeeper_octopus_maid.png"
+MASCOT="$ROOT_DIR/Housekeeping/Resources/BenignMonster/mascot.png"
 [[ -f "$MASCOT" ]] || { echo "Missing canonical mascot: $MASCOT" >&2; exit 1; }
 command -v swift >/dev/null || { echo "Xcode Command Line Tools are required." >&2; exit 1; }
 command -v iconutil >/dev/null || { echo "macOS iconutil is required." >&2; exit 1; }

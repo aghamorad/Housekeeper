@@ -74,12 +74,17 @@ struct ContentView: View {
             if let workspace = appState.workspace {
                 ScreenChrome(title: "Housekeeper") {
                     sheetBody(workspace)
+                        .id(workspace.rawValue)
+                        .transition(.opacity.combined(with: .offset(y: 5)))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
                 Screen()
+                    .id("overview")
+                    .transition(.opacity)
             }
         }
+            .animation(.spring(response: 0.28, dampingFraction: 0.88), value: appState.workspace)
             .environment(\.uiStyle, style)
             .housekeepingSurface(style)
             // The tools share one navigable window; the rail scrolls when needed.
@@ -394,6 +399,7 @@ private struct JobBar: View {
     @Environment(\.uiStyle) private var style
     @State private var showAdvancedTools: Bool = false
     @State private var mascotHovered: Bool = false
+    @Namespace private var sidebarSelectionNS
 
     var body: some View {
         if style.isRetro {
@@ -491,10 +497,13 @@ private struct JobBar: View {
                     // Category 1: System Care
                     sidebarCategory("System Care") {
                         SidebarNavigationRow(title: "Dashboard", icon: "square.grid.2x2",
-                                             selected: appState.workspace == nil && appState.showOverview) {
-                            appState.workspace = nil
-                            appState.showOverview = true
-                            appState.showSweepResults = false
+                                             selected: appState.workspace == nil && appState.showOverview,
+                                             selectionNamespace: sidebarSelectionNS) {
+                            withAnimation(.spring(response: 0.30, dampingFraction: 0.82)) {
+                                appState.workspace = nil
+                                appState.showOverview = true
+                                appState.showSweepResults = false
+                            }
                         }
                         if let job = allJobs.first(where: { $0.id == "clean" }) {
                             sidebarJob(job, customTitle: "Clean Up", customIcon: "sparkles")
@@ -663,25 +672,22 @@ private struct JobBar: View {
 
     private func sidebarJob(_ job: Job, customTitle: String? = nil, customIcon: String? = nil) -> some View {
         SidebarNavigationRow(title: customTitle ?? job.title, icon: customIcon ?? job.systemImage,
-                             selected: selectedJobID == job.id, enabled: job.isEnabled, action: job.action)
+                             selected: selectedJobID == job.id, enabled: job.isEnabled,
+                             selectionNamespace: sidebarSelectionNS) {
+            withAnimation(.spring(response: 0.30, dampingFraction: 0.82)) {
+                job.action()
+            }
+        }
             .help(job.help)
     }
 
     private func loadBenignMonsterMascot() -> NSImage? {
-        let preferred = Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/BenignMonster/housekeeper_octopus_maid.png")
-        if FileManager.default.fileExists(atPath: preferred.path), let img = NSImage(contentsOf: preferred) {
-            return img
-        }
         let bundlePath = Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/BenignMonster/mascot.png")
         if FileManager.default.fileExists(atPath: bundlePath.path), let img = NSImage(contentsOf: bundlePath) {
             return img
         }
-        let devPath = URL(fileURLWithPath: "/Users/Morad/C3PO/Housekeeping/Housekeeping/Resources/BenignMonster/housekeeper_octopus_maid.png")
+        let devPath = URL(fileURLWithPath: "/Users/Morad/C3PO/Housekeeping/Housekeeping/Resources/BenignMonster/mascot.png")
         if FileManager.default.fileExists(atPath: devPath.path), let img = NSImage(contentsOf: devPath) {
-            return img
-        }
-        let fallback = URL(fileURLWithPath: "/Users/Morad/Desktop/BMP/afaedd61-c32a-4a0b-a308-26727bf2fc0a.png")
-        if FileManager.default.fileExists(atPath: fallback.path), let img = NSImage(contentsOf: fallback) {
             return img
         }
         return nil

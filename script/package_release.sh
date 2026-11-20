@@ -140,7 +140,7 @@ stage() {
   if [[ -n "$(/usr/bin/git -C "$ROOT_DIR" status --porcelain -- Housekeeping Runtime script)" ]]; then
     commit=""
   fi
-  source_digest="$(shasum -a 256 "${SOURCES[@]}" "$ROOT_DIR/Housekeeping/Info.plist" "$ROOT_DIR/script/render_app_icon.swift" "$ROOT_DIR/Housekeeping/Resources/BenignMonster/housekeeper_octopus_maid.png" | shasum -a 256 | awk '{print $1}')"
+  source_digest="$(shasum -a 256 "${SOURCES[@]}" "$ROOT_DIR/Housekeeping/Info.plist" "$ROOT_DIR/script/render_app_icon.swift" "$ROOT_DIR/Housekeeping/Resources/BenignMonster/mascot.png" | shasum -a 256 | awk '{print $1}')"
   branch="$(/usr/bin/git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   built="$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"
   for pair in "HousekeepingSourceCommit:$commit" "HousekeepingSourceBaseCommit:$base_commit" "HousekeepingSourceDigest:$source_digest" "HousekeepingSourceBranch:$branch" "HousekeepingBuildDate:$built"; do
