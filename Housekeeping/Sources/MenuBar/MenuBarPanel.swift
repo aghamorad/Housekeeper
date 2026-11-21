@@ -60,6 +60,7 @@ struct MenuBarPanel: View {
     let onDisk: () -> Void
     var onBatteryHealth: (() -> Void)? = nil
     var onSpeedTest: (() -> Void)? = nil
+    var onRouteSweep: (() -> Void)? = nil
     let onExplain: (HousekeeperTopic) -> Void
     let onResize: (CGFloat) -> Void
 
@@ -1458,14 +1459,18 @@ struct MenuBarPanel: View {
             }
 
             HStack(spacing: 8) {
+                DoorButton(title: "Open App", icon: "macwindow", action: leaving(onOpen))
                 DoorButton(title: "Free RAM", icon: "memorychip", action: { _ = vitals.freeRAM() })
                 if let onSpeedTest {
                     DoorButton(title: "Speed Test", icon: "speedometer", action: leaving(onSpeedTest))
                 } else {
                     DoorButton(title: "Clean", icon: "sparkles", action: leaving(onScan))
                 }
-                DoorButton(title: "Cooling", icon: "fan.fill", action: leaving(onFans))
-                DoorButton(title: "Open App", icon: "macwindow", action: leaving(onOpen))
+                if let onRouteSweep {
+                    DoorButton(title: "Route Sweep", icon: "point.topleft.down.curvedto.point.bottomright.up", action: leaving(onRouteSweep))
+                } else {
+                    DoorButton(title: "Cooling", icon: "fan.fill", action: leaving(onFans))
+                }
             }
 
             HStack(spacing: 8) {

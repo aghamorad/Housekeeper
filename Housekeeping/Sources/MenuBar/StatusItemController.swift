@@ -24,6 +24,7 @@ extension Notification.Name {
     static let housekeepingOpenVPNTunnels = Notification.Name("HousekeepingOpenVPNTunnels")
     static let housekeepingOpenDNSSwitcher = Notification.Name("HousekeepingOpenDNSSwitcher")
     static let housekeepingOpenSpeedTest = Notification.Name("HousekeepingOpenSpeedTest")
+    static let housekeepingOpenRouteSweep = Notification.Name("HousekeepingOpenRouteSweep")
     static let housekeepingOpenPermissionsDoctor = Notification.Name("HousekeepingOpenPermissionsDoctor")
     /// Opens the housekeeper already holding a topic. The topic itself travels as
     /// the notification's object, because a reading is the reason it was opened.
@@ -426,6 +427,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             onDisk: { [weak self] in self?.openDisk() },
             onBatteryHealth: { [weak self] in self?.openBatteryHealth() },
             onSpeedTest: { [weak self] in self?.openSpeedTest() },
+            onRouteSweep: { [weak self] in self?.openRouteSweep() },
             onExplain: { [weak self] topic in self?.explain(topic) },
             onResize: { [weak self] height in self?.resize(to: height) }
         )
@@ -622,6 +624,12 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     @objc private func openSpeedTest() {
         WindowOpener.shared.withWindow {
             NotificationCenter.default.post(name: .housekeepingOpenSpeedTest, object: nil)
+        }
+    }
+
+    @objc private func openRouteSweep() {
+        WindowOpener.shared.withWindow {
+            NotificationCenter.default.post(name: .housekeepingOpenRouteSweep, object: nil)
         }
     }
 

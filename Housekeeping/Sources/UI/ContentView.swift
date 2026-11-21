@@ -110,6 +110,16 @@ struct ContentView: View {
             .onAppear {
                 WindowOpener.shared.register { openWindow(id: "main") }
             }
+            .modifier(PrimaryNotificationsModifier(appState: appState))
+            .modifier(ToolNotificationsModifier(appState: appState))
+    }
+}
+
+private struct PrimaryNotificationsModifier: ViewModifier {
+    @ObservedObject var appState: AppState
+
+    func body(content: Content) -> some View {
+        content
             .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenHousekeeper)) { _ in
                 appState.showHousekeeper = true
             }
@@ -139,6 +149,14 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .housekeepingScanNow)) { _ in
                 appState.startScan()
             }
+    }
+}
+
+private struct ToolNotificationsModifier: ViewModifier {
+    @ObservedObject var appState: AppState
+
+    func body(content: Content) -> some View {
+        content
             .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenPhone)) { _ in
                 appState.showPhone = true
             }
@@ -156,6 +174,9 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenSpeedTest)) { _ in
                 appState.showSpeedTest = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenRouteSweep)) { _ in
+                appState.showRoutes = true
             }
             .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenPermissionsDoctor)) { _ in
                 appState.showPermissionsDoctor = true
