@@ -51,11 +51,18 @@ class RuleEngine {
             // From executable dir: up 1 = Contents, up 2 = .app root
             // But when run from .build, execDir is .build, up 1 = project root
             let resourcesCandidate = execDir.deletingLastPathComponent()
-                .appendingPathComponent("Housekeeping.app")
+                .appendingPathComponent("Housekeeper.app")
                 .appendingPathComponent("Contents")
                 .appendingPathComponent("Resources")
                 .appendingPathComponent("Rules")
             candidates.append(resourcesCandidate)
+
+            let legacyResourcesCandidate = execDir.deletingLastPathComponent()
+                .appendingPathComponent("Housekeeping.app")
+                .appendingPathComponent("Contents")
+                .appendingPathComponent("Resources")
+                .appendingPathComponent("Rules")
+            candidates.append(legacyResourcesCandidate)
 
             let projectResources = execDir.deletingLastPathComponent()
                 .appendingPathComponent("Resources")
@@ -64,6 +71,7 @@ class RuleEngine {
         }
 
         // 5. Relative to current working directory
+        candidates.append(cwdURL.appendingPathComponent("Housekeeper.app/Contents/Resources/Rules"))
         candidates.append(cwdURL.appendingPathComponent("Housekeeping.app/Contents/Resources/Rules"))
         candidates.append(cwdURL.appendingPathComponent("Housekeeping/Resources/Rules"))
 
@@ -71,6 +79,7 @@ class RuleEngine {
         candidates.append(cwdURL.parent().appendingPathComponent("Housekeeping/Resources/Rules"))
 
         // 7. Direct paths
+        candidates.append(URL(fileURLWithPath: "/Applications/Housekeeper.app/Contents/Resources/Rules"))
         candidates.append(URL(fileURLWithPath: "/Applications/Housekeeping.app/Contents/Resources/Rules"))
 
         for rulesDir in candidates {

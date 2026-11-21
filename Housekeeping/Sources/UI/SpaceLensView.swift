@@ -14,9 +14,51 @@ struct SpaceLensView: View {
 
     @State private var activeTab: Tab = .categories
     @State private var searchFilter: String = ""
-    @State private var largeFileSort: LargeFileSort = .largest
-    @State private var appSort: AppSort = .largest
+    @State private var categorySort: CategorySort = .largest
+    @State private var largeFileSort: ArrangeOption = .largest
+    @State private var appSort: ArrangeOption = .largest
+    @State private var folderSort: ArrangeOption = .largest
     @State private var itemPendingTrash: StorageItem? = nil
+
+    private enum CategorySort: String, CaseIterable, Identifiable {
+        case largest = "Size (Largest)"
+        case smallest = "Size (Smallest)"
+        case name = "Name (A–Z)"
+        case defaultOrder = "Default Order"
+
+        var id: String { rawValue }
+        var systemImage: String {
+            switch self {
+            case .largest: return "arrow.down.circle"
+            case .smallest: return "arrow.up.circle"
+            case .name: return "textformat.size.smaller"
+            case .defaultOrder: return "list.bullet"
+            }
+        }
+    }
+
+    private enum ArrangeOption: String, CaseIterable, Identifiable {
+        case largest = "Size (Largest)"
+        case smallest = "Size (Smallest)"
+        case newest = "Recently Modified"
+        case oldest = "Oldest Modified"
+        case nameAsc = "Name (A–Z)"
+        case nameDesc = "Name (Z–A)"
+        case kind = "Kind"
+
+        var id: String { rawValue }
+        var systemImage: String {
+            switch self {
+            case .largest: return "arrow.down.circle"
+            case .smallest: return "arrow.up.circle"
+            case .newest: return "clock.arrow.circlepath"
+            case .oldest: return "clock"
+            case .nameAsc: return "textformat.size.smaller"
+            case .nameDesc: return "textformat.size.larger"
+            case .kind: return "tag"
+            }
+        }
+    }
 
     private enum Tab: String, CaseIterable, Identifiable {
         case categories = "Storage Lens"
@@ -36,39 +78,46 @@ struct SpaceLensView: View {
         }
     }
 
-    private enum LargeFileSort: String, CaseIterable, Identifiable {
-        case largest = "Size (Largest)"
-        case smallest = "Size (Smallest)"
-        case newest = "Recently Modified"
-        case oldest = "Oldest Modified"
-        case name = "Name (A–Z)"
-
-        var id: String { rawValue }
-        var systemImage: String {
-            switch self {
-            case .largest: return "arrow.down.circle"
-            case .smallest: return "arrow.up.circle"
-            case .newest: return "clock.arrow.circlepath"
-            case .oldest: return "clock"
-            case .name: return "textformat.size.smaller"
-            }
+    private var sortedCategories: [StorageCategory] {
+        switch categorySort {
+        case .defaultOrder:
+            return analyzer.categories
+        case .largest:
+            return analyzer.categories.sorted { $0.size > $1.size }
+        case .smallest:
+            return analyzer.categories.sorted { $0.size < $1.size }
+        case .name:
+            return analyzer.categories.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         }
     }
 
-    private enum AppSort: String, CaseIterable, Identifiable {
-        case largest = "Size (Largest)"
-        case smallest = "Size (Smallest)"
-        case newest = "Recently Updated"
-        case name = "Name (A–Z)"
-
-        var id: String { rawValue }
-        var systemImage: String {
-            switch self {
-            case .largest: return "arrow.down.circle"
-            case .smallest: return "arrow.up.circle"
-            case .newest: return "clock.arrow.circlepath"
-            case .name: return "textformat.size.smaller"
+    private func sortItems(_ items: [StorageItem], by option: ArrangeOption) -> [StorageItem] {
+        items.sorted { lhs, rhs in
+            switch option {
+            case .largest:
+                if lhs.isMeasuring != rhs.isMeasuring { return !lhs.isMeasuring && rhs.isMeasuring }
+                if lhs.size != rhs.size { return lhs.size > rhs.size }
+            case .smallest:
+                if lhs.isMeasuring != rhs.isMeasuring { return !lhs.isMeasuring && rhs.isMeasuring }
+                if lhs.size != rhs.size { return lhs.size < rhs.size }
+            case .newest:
+                if let l = lhs.modifiedDate, let r = rhs.modifiedDate, l != r { return l > r }
+                if (lhs.modifiedDate != nil) != (rhs.modifiedDate != nil) { return lhs.modifiedDate != nil }
+            case .oldest:
+                if let l = lhs.modifiedDate, let r = rhs.modifiedDate, l != r { return l < r }
+                if (lhs.modifiedDate != nil) != (rhs.modifiedDate != nil) { return lhs.modifiedDate != nil }
+            case .nameAsc:
+                let comp = lhs.name.localizedStandardCompare(rhs.name)
+                if comp != .orderedSame { return comp == .orderedAscending }
+            case .nameDesc:
+                let comp = lhs.name.localizedStandardCompare(rhs.name)
+                if comp != .orderedSame { return comp == .orderedDescending }
+            case .kind:
+                let comp = lhs.kind.localizedStandardCompare(rhs.kind)
+                if comp != .orderedSame { return comp == .orderedAscending }
+                if lhs.size != rhs.size { return lhs.size > rhs.size }
             }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
         }
     }
 
@@ -77,20 +126,7 @@ struct SpaceLensView: View {
         let base = query.isEmpty
             ? analyzer.installedApps
             : analyzer.installedApps.filter { $0.name.localizedCaseInsensitiveContains(query) }
-        return base.sorted { lhs, rhs in
-            if lhs.isMeasuring != rhs.isMeasuring { return !lhs.isMeasuring && rhs.isMeasuring }
-            switch appSort {
-            case .largest:
-                if lhs.size != rhs.size { return lhs.size > rhs.size }
-            case .smallest:
-                if lhs.size != rhs.size { return lhs.size < rhs.size }
-            case .newest:
-                if let l = lhs.modifiedDate, let r = rhs.modifiedDate, l != r { return l > r }
-            case .name:
-                break
-            }
-            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
-        }
+        return sortItems(base, by: appSort)
     }
 
     private var filteredLargeFiles: [StorageItem] {
@@ -101,30 +137,15 @@ struct SpaceLensView: View {
                 $0.name.localizedCaseInsensitiveContains(query)
                 || $0.parentDisplayPath.localizedCaseInsensitiveContains(query)
             }
-        return base.sorted { lhs, rhs in
-            switch largeFileSort {
-            case .largest:
-                if lhs.size != rhs.size { return lhs.size > rhs.size }
-            case .smallest:
-                if lhs.size != rhs.size { return lhs.size < rhs.size }
-            case .newest:
-                if let l = lhs.modifiedDate, let r = rhs.modifiedDate, l != r { return l > r }
-                if (lhs.modifiedDate != nil) != (rhs.modifiedDate != nil) { return lhs.modifiedDate != nil }
-            case .oldest:
-                if let l = lhs.modifiedDate, let r = rhs.modifiedDate, l != r { return l < r }
-                if (lhs.modifiedDate != nil) != (rhs.modifiedDate != nil) { return lhs.modifiedDate != nil }
-            case .name:
-                let comp = lhs.name.localizedStandardCompare(rhs.name)
-                if comp != .orderedSame { return comp == .orderedAscending }
-            }
-            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
-        }
+        return sortItems(base, by: largeFileSort)
     }
 
     private var filteredFolderItems: [StorageItem] {
         let query = searchFilter.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return analyzer.currentFolderItems }
-        return analyzer.currentFolderItems.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        let base = query.isEmpty
+            ? analyzer.currentFolderItems
+            : analyzer.currentFolderItems.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        return sortItems(base, by: folderSort)
     }
 
     var body: some View {
@@ -342,11 +363,36 @@ struct SpaceLensView: View {
 
     private var categoriesSection: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("Storage by Category")
-                .font(.system(size: 16, weight: .semibold))
+            HStack {
+                Text("Storage by Category")
+                    .font(.system(size: 16, weight: .semibold))
+                Spacer()
+                Menu {
+                    Picker("Arrange by", selection: $categorySort) {
+                        ForEach(CategorySort.allCases) { opt in
+                            Label(opt.rawValue, systemImage: opt.systemImage).tag(opt)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: categorySort.systemImage)
+                            .foregroundStyle(style.accent)
+                        Text(categorySort.rawValue)
+                            .font(.system(size: 11, weight: .medium))
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 8))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(style.border, lineWidth: 1))
+                }
+                .menuStyle(.borderlessButton)
+            }
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 14)], spacing: 14) {
-                ForEach(analyzer.categories) { cat in
+                ForEach(sortedCategories) { cat in
                     categoryCard(cat)
                 }
             }
@@ -530,6 +576,31 @@ struct SpaceLensView: View {
         }
     }
 
+    private func arrangePicker(selection: Binding<ArrangeOption>) -> some View {
+        Menu {
+            Picker("Arrange by", selection: selection) {
+                ForEach(ArrangeOption.allCases) { opt in
+                    Label(opt.rawValue, systemImage: opt.systemImage).tag(opt)
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: selection.wrappedValue.systemImage)
+                    .foregroundStyle(style.accent)
+                Text(selection.wrappedValue.rawValue)
+                    .font(.system(size: 11, weight: .medium))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(style.border, lineWidth: 1))
+        }
+        .menuStyle(.borderlessButton)
+    }
+
     // MARK: - Apps Section
 
     private var appsSection: some View {
@@ -559,28 +630,7 @@ struct SpaceLensView: View {
 
                 searchBar(placeholder: "Filter apps…")
 
-                Menu {
-                    Picker("Sort apps", selection: $appSort) {
-                        ForEach(AppSort.allCases) { opt in
-                            Label(opt.rawValue, systemImage: opt.systemImage).tag(opt)
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: appSort.systemImage)
-                            .foregroundStyle(style.accent)
-                        Text(appSort.rawValue)
-                            .font(.system(size: 11, weight: .medium))
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 8))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 6))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(style.border, lineWidth: 1))
-                }
-                .menuStyle(.borderlessButton)
+                arrangePicker(selection: $appSort)
 
                 ThemeButton(title: "Uninstaller", systemImage: "xmark.app", help: "Open full App Uninstaller to remove apps with their leftover support files") {
                     appState.showUninstaller = true
@@ -620,29 +670,7 @@ struct SpaceLensView: View {
 
                 searchBar(placeholder: "Filter files or folder…")
 
-                Menu {
-                    Picker("Organize by", selection: $largeFileSort) {
-                        ForEach(LargeFileSort.allCases) { opt in
-                            Label(opt.rawValue, systemImage: opt.systemImage)
-                                .tag(opt)
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: largeFileSort.systemImage)
-                            .foregroundStyle(style.accent)
-                        Text(largeFileSort.rawValue)
-                            .font(.system(size: 11, weight: .medium))
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 8))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 6))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(style.border, lineWidth: 1))
-                }
-                .menuStyle(.borderlessButton)
+                arrangePicker(selection: $largeFileSort)
             }
 
             if files.isEmpty {
@@ -752,6 +780,8 @@ struct SpaceLensView: View {
                 ))
                 .toggleStyle(.checkbox)
                 .font(.system(size: 11))
+
+                arrangePicker(selection: $folderSort)
 
                 searchBar(placeholder: "Filter folder…")
             }
