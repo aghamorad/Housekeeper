@@ -77,8 +77,57 @@ final class AppState: ObservableObject {
     }
 
     @Published var showOverview = true
-    @Published var workspace: Screen?
+    @Published var workspace: Screen? {
+        didSet {
+            guard !isNavigatingHistory, workspace != oldValue else { return }
+            if workspaceBackStack.last != oldValue {
+                workspaceBackStack.append(oldValue)
+                if workspaceBackStack.count > 30 {
+                    workspaceBackStack.removeFirst(workspaceBackStack.count - 30)
+                }
+            }
+            workspaceForwardStack.removeAll()
+        }
+    }
     @Published var presentedScreen: Screen?
+    @Published private(set) var workspaceBackStack: [Screen?] = []
+    @Published private(set) var workspaceForwardStack: [Screen?] = []
+    private var isNavigatingHistory = false
+
+    var canGoBackWorkspace: Bool { !workspaceBackStack.isEmpty }
+    var canGoForwardWorkspace: Bool { !workspaceForwardStack.isEmpty }
+
+    func goBackWorkspace() {
+        guard let target = workspaceBackStack.popLast() else { return }
+        workspaceForwardStack.append(workspace)
+        isNavigatingHistory = true
+        workspace = target
+        if target == nil {
+            showOverview = true
+            showSweepResults = false
+        }
+        isNavigatingHistory = false
+    }
+
+    func goForwardWorkspace() {
+        guard let target = workspaceForwardStack.popLast() else { return }
+        workspaceBackStack.append(workspace)
+        isNavigatingHistory = true
+        workspace = target
+        if target == nil {
+            showOverview = true
+            showSweepResults = false
+        }
+        isNavigatingHistory = false
+    }
+
+    func goHomeWorkspace() {
+        presentedScreen = nil
+        workspace = nil
+        showOverview = true
+        showSweepResults = false
+    }
+
     // Tool navigation changes the workspace; contextual help and confirmations
     // present above it. Closing a modal returns to the same tool.
     var screen: Screen? {

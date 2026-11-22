@@ -1672,6 +1672,19 @@ struct SafetyTests {
             kind: "BIN"
         )
         try expect(analyzer.canTrash(safeFile), "SpaceAnalyzer should allow trashing ordinary user files.")
+
+        let recursiveHits = SpaceAnalyzer.runRecursiveSearch(
+            rootPath: spaceDir.path,
+            query: "data.bin",
+            includeHidden: false,
+            homePath: FileManager.default.homeDirectoryForCurrentUser.path,
+            cachedSizes: [:]
+        )
+        try expect(recursiveHits.contains(where: { $0.name == "data.bin" && $0.size == Int64(payload.count) }), "SpaceAnalyzer recursive search must locate nested files by name.")
+        let prevPath = analyzer.currentFolderPath
+        analyzer.navigateTo(path: nestedDir.path)
+        try expect(analyzer.breadcrumbs.last?.path == nestedDir.path, "SpaceAnalyzer breadcrumbs must end at the current folder path.")
+        analyzer.navigateTo(path: prevPath)
     }
 
     @MainActor

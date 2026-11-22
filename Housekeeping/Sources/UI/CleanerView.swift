@@ -112,6 +112,7 @@ struct CleanerView: View {
             currentItem: model.progressLine.isEmpty ? nil : model.progressLine,
             stepCount: "\(model.completedCategories.count) of \(CleanCategory.allCases.count) categories",
             progressFraction: Double(model.completedCategories.count) / Double(max(CleanCategory.allCases.count, 1)),
+            mode: .scanningFolders,
             onStop: { model.stopScan() }
         )
     }
@@ -122,55 +123,86 @@ struct CleanerView: View {
         return HousekeeperScanningBanner(
             title: model.category == .trash ? "Emptying the Trash…" : "Safely moving selected items to Quarantine…",
             subtitle: "Every item is recorded before it moves. Safe Quarantine keeps backups for 30 days.",
-            currentItem: current.map { "Checking: " + $0 },
+            currentItem: current.map { "Sweeping: " + $0 },
             stepCount: progress.map { "\($0.completed) of \($0.total)" },
             progressFraction: progress.map { Double($0.completed) / Double(max($0.total, 1)) },
+            mode: model.category == .trash ? .emptyingTrash : .cleaningItems,
             onStop: nil
         )
     }
 
     private var browsingControls: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "magnifyingglass").foregroundColor(style.secondaryText)
-            TextField("Search names, paths, or explanations", text: $model.query)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityLabel("Search cleanup results")
-            if !model.query.isEmpty {
-                Button("Clear Search") { model.query = "" }
-            }
-
-            if model.phase == .ready && (model.count(in: .everydayJunk) > 0 || model.count(in: .orphans) > 0) {
-                let safeTotal = model.total(in: .everydayJunk) + model.total(in: .orphans)
-                Button {
-                    model.selectSafeCaches()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "sparkles")
-                        Text("Smart Select Safe Junk (\(safeTotal.sizeDescription))")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12))
+                        .foregroundColor(style.secondaryText)
+                    TextField("Search names, paths, or explanations…", text: $model.query)
+                        .textFieldStyle(.plain)
+                        .accessibilityLabel("Search cleanup results")
+                    if !model.query.isEmpty {
+                        Button {
+                            model.query = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(style.secondaryText)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .font(.system(size: 11, weight: .semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(style.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
-                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(style.accent.opacity(0.35), lineWidth: 1))
-                    .foregroundStyle(style.accent)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(style.border, lineWidth: 1))
+
+                if model.phase == .ready && (model.count(in: .everydayJunk) > 0 || model.count(in: .orphans) > 0) {
+                    let safeTotal = model.total(in: .everydayJunk) + model.total(in: .orphans)
+                    Button {
+                        model.selectSafeCaches()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "sparkles")
+                            Text("Smart Select Safe Junk (\(safeTotal.sizeDescription))")
+                        }
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 6)
+                        .background(style.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(style.accent.opacity(0.35), lineWidth: 1))
+                        .foregroundStyle(style.accent)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Select all harmless, rebuildable caches with one click.")
+                }
+
+                Button {
+                    showScanDetails.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: showScanDetails ? "chevron.up.circle" : "info.circle")
+                        Text(showScanDetails ? "Hide Info" : "Scan Info")
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(style.border, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
-                .help("Select all harmless, rebuildable caches with one click (Purge & Mole style).")
             }
 
-            Picker("Sort", selection: $model.order) {
-                ForEach(FileOrder.allCases) { order in
-                    Text(order.shortLabel).tag(order).help(order.rawValue)
+            HStack(spacing: 8) {
+                Text("Arrange by:")
+                    .foregroundColor(style.secondaryText)
+                Picker("Sort", selection: $model.order) {
+                    ForEach(FileOrder.allCases) { order in
+                        Text(order.shortLabel).tag(order).help(order.rawValue)
+                    }
                 }
-            }.pickerStyle(.segmented).labelsHidden().frame(width: 360)
-            Button {
-                showScanDetails.toggle()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: showScanDetails ? "chevron.up.circle" : "info.circle")
-                    Text(showScanDetails ? "Hide Details" : "Scan Details")
-                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 360)
+                Spacer()
             }
         }
         .font(style.smallFont)
@@ -862,7 +894,7 @@ struct CleanerView: View {
                     }
 
                     if !model.pendingPaths.isEmpty {
-                        Text("Exact paths to move (\(model.pendingPaths.count))").font(style.labelFont)
+                        Text("Items to move (\(model.pendingPaths.count))").font(style.labelFont)
                         ScrollView {
                             VStack(alignment: .leading, spacing: 6) {
                                 ForEach(model.pendingPaths, id: \.self) { path in
@@ -871,24 +903,30 @@ struct CleanerView: View {
                                 }
                             }
                         }.frame(maxHeight: 200)
-                        Text("Space freed now: 0 B. Quarantine holds the full data on this disk until you later review permanent deletion.")
-                            .font(style.smallFont).foregroundColor(style.caution)
-                    }
-                    HStack(spacing: 8) {
-                        Text("Type “ok” to confirm:")
-                            .font(style.smallFont)
-                        TextField("ok", text: $model.confirmationText)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 90)
-                            .onSubmit { if matches(action) { model.confirmPending() } }
-
-                        Button("Fill “ok”") {
-                            model.confirmationText = "ok"
-                            model.confirmPending()
+                        if action == .clean {
+                            Label("Reversible: moved to Quarantine so you can restore anytime.", systemImage: "checkmark.shield.fill")
+                                .font(style.smallFont)
+                                .foregroundColor(style.positive)
                         }
-                        .font(style.smallFont)
-                        .buttonStyle(.bordered)
-                        .help("Autofill 'ok' for 1-tap confirmation.")
+                    }
+
+                    if action != .clean {
+                        HStack(spacing: 8) {
+                            Text("Type “ok” to confirm:")
+                                .font(style.smallFont)
+                            TextField("ok", text: $model.confirmationText)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 90)
+                                .onSubmit { if matches(action) { model.confirmPending() } }
+
+                            Button("Fill “ok”") {
+                                model.confirmationText = "ok"
+                                model.confirmPending()
+                            }
+                            .font(style.smallFont)
+                            .buttonStyle(.bordered)
+                            .help("Autofill 'ok' for 1-tap confirmation.")
+                        }
                     }
 
                     if let hint = model.confirmationHint {
@@ -903,11 +941,16 @@ struct CleanerView: View {
                         ThemeButton(
                             title: action == .emptyTrash ? "Delete Permanently" : "Move to Quarantine",
                             isPrimary: true,
-                            isEnabled: matches(action),
+                            isEnabled: action == .clean || matches(action),
                             help: action == .emptyTrash
                                 ? "Removes what is in the Trash for good."
                                 : "Moves everything listed into Quarantine, where it can be put back."
-                        ) { model.confirmPending() }
+                        ) {
+                            if action == .clean {
+                                model.confirmationText = "ok"
+                            }
+                            model.confirmPending()
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

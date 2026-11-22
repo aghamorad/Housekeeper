@@ -61,6 +61,33 @@ struct VPNLocation: Identifiable, Hashable, Codable, Sendable {
         }
         return String(scalars)
     }
+
+    var region: VPNRegion {
+        let c = country.lowercased()
+        let cont = continent.lowercased()
+        if ["turkey", "united arab emirates", "uae", "armenia", "georgia", "qatar", "bahrain", "kuwait", "oman", "saudi arabia", "israel", "jordan", "egypt", "cyprus"].contains(c) {
+            return .middleEast
+        }
+        if cont.contains("europe") || cont == "eu" { return .europe }
+        if cont.contains("america") || cont == "na" || cont == "sa" { return .americas }
+        if cont.contains("asia") || cont.contains("oceania") || cont == "as" || cont == "oc" { return .asiaPacific }
+        return .other
+    }
+}
+
+enum VPNRegion: String, CaseIterable, Identifiable, Sendable {
+    case all = "All"
+    case middleEast = "Middle East"
+    case europe = "Europe"
+    case americas = "Americas"
+    case asiaPacific = "Asia-Pacific"
+    case other = "Other"
+
+    var id: String { rawValue }
+
+    static var filterTabs: [VPNRegion] {
+        [.all, .middleEast, .europe, .americas, .asiaPacific]
+    }
 }
 
 // MARK: - Routes
@@ -318,9 +345,11 @@ enum UIMode: String, CaseIterable, Identifiable {
 }
 
 /// How much work the simple interface is allowed to do on the user's behalf.
-/// Each one is a real preset over granularity, protocols, ports and probes.
+/// Each one is a real preset over location breadth, protocols, ports and probes.
 enum RouteDepth: String, CaseIterable, Identifiable {
+    case superQuick
     case quick
+    case standard
     case thorough
     case careful
 
@@ -328,23 +357,36 @@ enum RouteDepth: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .superQuick: return "Super Quick"
         case .quick: return "Quick"
+        case .standard: return "Standard"
         case .thorough: return "Thorough"
-        case .careful: return "Careful"
+        case .careful: return "Deep"
+        }
+    }
+
+    var shortHint: String {
+        switch self {
+        case .superQuick: return "~1 min · 1 server/country"
+        case .quick: return "~2–5 min · 1/city"
+        case .standard: return "Every datacenter · TCP/UDP"
+        case .thorough: return "Every datacenter · All protocols"
+        case .careful: return "Full matrix + page check"
         }
     }
 
     var blurb: String {
         switch self {
+        case .superQuick:
+            return "Fastest check (~1–2 min): tries just one server per picked country over your client's primary protocol on port 443."
         case .quick:
-            return "One server per city, over the settings almost everything accepts. "
-                + "Minutes rather than an hour."
+            return "One server per city over fast protocols on port 443. Usually finishes in a few minutes."
+        case .standard:
+            return "Every datacenter in your picked countries over WireGuard, TCP, and UDP (ports 443 & 80) with a real page load check."
         case .thorough:
-            return "Every datacenter in the countries below, over both TCP and UDP. "
-                + "This is what finds the routes the quick pass misses."
+            return "Every datacenter across all fast & stealth protocols and common ports, with real page verification."
         case .careful:
-            return "Everything Thorough does, plus a real page load through each tunnel. "
-                + "Slower, and it is the one that catches a route which connects but carries nothing."
+            return "Exhaustive matrix: every datacenter, every supported protocol, and every common port with full ping & page checks."
         }
     }
 }

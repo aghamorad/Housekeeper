@@ -108,25 +108,30 @@ struct OverviewView: View {
                     }
                 }
             }
-            .frame(maxWidth: 820, alignment: .leading)
+            .frame(maxWidth: 940, alignment: .leading)
             .padding(28)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
         .background { HousekeepingBackdrop(style: style) }
     }
 
     private var headerBar: some View {
         HStack(alignment: .center, spacing: 14) {
-            if let mascot = HousekeeperMascot.loadOriginalMascot() ?? HousekeeperMascot.loadMascot() {
-                Image(nsImage: mascot)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 48, height: 48)
-                    .rotationEffect(.degrees(mascotHovered && !reduceMotion ? -4 : 0))
-                    .scaleEffect(mascotHovered && !reduceMotion ? 1.07 : 1.0)
-                    .onHover { mascotHovered = $0 }
-                    .animation(.spring(response: 0.32, dampingFraction: 0.65), value: mascotHovered)
+            AnimatedCleaningMascotStage(
+                mode: appState.cleaner.phase == .scanning ? .scanningFolders : .maintenance,
+                isActive: mascotHovered || appState.cleaner.phase == .scanning,
+                size: 56,
+                showFolderTrack: false,
+                accent: style.accent
+            )
+            .scaleEffect(mascotHovered && !reduceMotion ? 1.09 : 1.0)
+            .onHover { mascotHovered = $0 }
+            .onTapGesture {
+                appState.showHousekeeper = true
             }
+            .animation(.spring(response: 0.32, dampingFraction: 0.65), value: mascotHovered)
+            .help("Hover to wake the Housekeeper, or click to chat.")
+
             VStack(alignment: .leading, spacing: 3) {
                 Text("Housekeeper")
                     .font(style.isRetro ? style.titleFont : .system(size: 25, weight: .semibold, design: .rounded))

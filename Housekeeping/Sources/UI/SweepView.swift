@@ -63,7 +63,13 @@ private struct SweepWorkingScreen: View {
 
     private var masthead: some View {
         VStack(spacing: 10) {
-            WorkingOctopus(size: 104)
+            AnimatedCleaningMascotStage(
+                mode: mascotMode,
+                isActive: true,
+                size: 116,
+                showFolderTrack: true,
+                accent: style.accent
+            )
 
             Text(stageTitle)
                 .font(style.titleFont)
@@ -164,6 +170,15 @@ private struct SweepWorkingScreen: View {
 
     private var stageTitle: String {
         appState.sweepStage?.title ?? "Writing it up"
+    }
+
+    private var mascotMode: CleaningActivityMode {
+        switch appState.sweepStage {
+        case .disk: return .scanningFolders
+        case .setup: return .maintenance
+        case .updates: return .checkingUpdates
+        case nil: return .scanningFolders
+        }
     }
 
     private var stageDetail: String {

@@ -110,11 +110,15 @@ public final class SpaceAnalyzer: ObservableObject {
     @Published public var showHiddenFiles: Bool = false
     @Published public var trashError: String? = nil
 
+    @Published public private(set) var subfolderSearchResults: [StorageItem] = []
+    @Published public private(set) var isSearchingSubfolders: Bool = false
+
     private let home = FileManager.default.homeDirectoryForCurrentUser
     private var sizeCache: [String: Int64] = [:]
     private var folderMeasureTask: Task<Void, Never>?
     private var appsTask: Task<Void, Never>?
     private var analysisTask: Task<Void, Never>?
+    private var searchTask: Task<Void, Never>?
 
     /// Paths skipped when measuring `/` so APFS firmlinks and virtual mounts are never double-counted.
     private nonisolated static let skippedRootSubpaths: Set<String> = [
@@ -627,6 +631,235 @@ public final class SpaceAnalyzer: ObservableObject {
         navigationHistory.append(currentFolderPath)
         forwardHistory.removeAll()
         loadFolder(path: parent)
+    }
+
+    public struct Breadcrumb: Identifiable, Hashable {
+        public let title: String
+        public let path: String
+        public var id: String { path }
+    }
+
+    public var breadcrumbs: [Breadcrumb] {
+        let std = URL(fileURLWithPath: currentFolderPath).standardizedFileURL.path
+        let homeStd = home.standardizedFileURL.path
+        if std == homeStd || std.hasPrefix(homeStd + "/") {
+            var crumbs: [Breadcrumb] = [Breadcrumb(title: "Home", path: homeStd)]
+            let suffix = String(std.dropFirst(homeStd.count))
+            var running = homeStd
+            for part in suffix.split(separator: "/") {
+                running = (running as NSString).appendingPathComponent(String(part))
+                crumbs.append(Breadcrumb(title: String(part), path: running))
+            }
+            return crumbs
+        }
+        var crumbs: [Breadcrumb] = [Breadcrumb(title: volumeName, path: "/")]
+        var running = ""
+        for part in std.split(separator: "/") {
+            running += "/" + part
+            crumbs.append(Breadcrumb(title: String(part), path: running))
+        }
+        return crumbs
+    }
+
+    public func clearSubfolderSearch() {
+        searchTask?.cancel()
+        isSearchingSubfolders = false
+        subfolderSearchResults = []
+    }
+
+    public func searchSubfolders(rootPath: String, query: String) {
+        searchTask?.cancel()
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            isSearchingSubfolders = false
+            subfolderSearchResults = []
+            return
+        }
+
+        isSearchingSubfolders = true
+        let includeHidden = showHiddenFiles
+        let homePath = home.path
+        let cachedSizes = sizeCache
+
+        searchTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let matches = Self.runRecursiveSearch(
+                rootPath: rootPath,
+                query: trimmed,
+                includeHidden: includeHidden,
+                homePath: homePath,
+                cachedSizes: cachedSizes
+            )
+            if Task.isCancelled { return }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.subfolderSearchResults = matches
+                self.isSearchingSubfolders = false
+            }
+
+            // Measure directory hits without cached sizes in the background so results show real sizes.
+            let unmeasured = matches.filter { $0.isMeasuring }
+            if !unmeasured.isEmpty {
+                var measured: [String: Int64] = [:]
+                await withTaskGroup(of: (String, Int64).self) { group in
+                    var iterator = unmeasured.prefix(30).makeIterator()
+                    for _ in 0..<4 {
+                        if let next = iterator.next() {
+                            let path = next.url.path
+                            group.addTask { (path, Self.measurePathBytes(path)) }
+                        }
+                    }
+                    while let (path, bytes) = await group.next() {
+                        if Task.isCancelled { return }
+                        measured[path] = bytes
+                        if let next = iterator.next() {
+                            let nextPath = next.url.path
+                            group.addTask { (nextPath, Self.measurePathBytes(nextPath)) }
+                        }
+                    }
+                }
+                if Task.isCancelled { return }
+                let finalMeasured = measured
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    for (p, b) in finalMeasured { self.sizeCache[p] = b }
+                    var updated = self.subfolderSearchResults
+                    for i in updated.indices {
+                        if let b = finalMeasured[updated[i].url.path] {
+                            updated[i].size = b
+                            updated[i].isMeasuring = false
+                        }
+                    }
+                    self.subfolderSearchResults = updated
+                }
+            }
+        }
+    }
+
+    public nonisolated static func runRecursiveSearch(
+        rootPath: String,
+        query: String,
+        includeHidden: Bool,
+        homePath: String,
+        cachedSizes: [String: Int64]
+    ) -> [StorageItem] {
+        let fm = FileManager.default
+        let rootURL = URL(fileURLWithPath: rootPath)
+        var candidateURLs: [URL] = []
+        var seen = Set<String>()
+
+        let skipDirs: Set<String> = [".git", "node_modules", ".build", ".venv", "__pycache__"]
+        let options: FileManager.DirectoryEnumerationOptions = includeHidden
+            ? [.skipsPackageDescendants]
+            : [.skipsHiddenFiles, .skipsPackageDescendants]
+
+        if let enumerator = fm.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: [
+                .isDirectoryKey, .isPackageKey, .isSymbolicLinkKey,
+                .totalFileAllocatedSizeKey, .totalFileSizeKey, .fileSizeKey, .contentModificationDateKey
+            ],
+            options: options,
+            errorHandler: { _, _ in true }
+        ) {
+            var scanned = 0
+            for case let url as URL in enumerator {
+                if Task.isCancelled { break }
+                scanned += 1
+                if scanned > 18_000 || candidateURLs.count >= 200 { break }
+
+                let name = url.lastPathComponent
+                if skipDirs.contains(name) {
+                    enumerator.skipDescendants()
+                    continue
+                }
+                if name.localizedCaseInsensitiveContains(query) {
+                    let std = url.standardizedFileURL.path
+                    if seen.insert(std).inserted {
+                        candidateURLs.append(url)
+                    }
+                }
+            }
+        }
+
+        // Supplement with Spotlight when the directory is huge or contains many hidden/deep items.
+        if candidateURLs.count < 80 {
+            let escaped = query.replacingOccurrences(of: "\"", with: "")
+                .replacingOccurrences(of: "'", with: "")
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/mdfind")
+            task.arguments = ["-onlyin", rootPath, "kMDItemFSName == '*\(escaped)*'cdw"]
+            let pipe = Pipe()
+            task.standardOutput = pipe
+            task.standardError = Pipe()
+            if (try? task.run()) != nil {
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                task.waitUntilExit()
+                if let output = String(data: data, encoding: .utf8) {
+                    for line in output.components(separatedBy: "\n") where !line.isEmpty {
+                        if candidateURLs.count >= 250 { break }
+                        let url = URL(fileURLWithPath: line)
+                        if !includeHidden && url.pathComponents.contains(where: { $0.hasPrefix(".") }) {
+                            continue
+                        }
+                        let std = url.standardizedFileURL.path
+                        if seen.insert(std).inserted {
+                            candidateURLs.append(url)
+                        }
+                    }
+                }
+            }
+        }
+
+        var items: [StorageItem] = []
+        for url in candidateURLs {
+            if Task.isCancelled { break }
+            guard let vals = try? url.resourceValues(forKeys: [
+                .isDirectoryKey, .isPackageKey, .isSymbolicLinkKey,
+                .totalFileAllocatedSizeKey, .totalFileSizeKey, .fileSizeKey, .contentModificationDateKey
+            ]) else { continue }
+
+            let isSymlink = vals.isSymbolicLink == true
+            let isPackage = vals.isPackage == true
+            let isDir = !isSymlink && vals.isDirectory == true && !isPackage
+            let isContainer = !isSymlink && (isDir || isPackage)
+
+            let size: Int64
+            let measuring: Bool
+            if isContainer {
+                if let cached = cachedSizes[url.path] {
+                    size = cached
+                    measuring = false
+                } else {
+                    size = 0
+                    measuring = true
+                }
+            } else {
+                size = Int64(vals.totalFileAllocatedSize ?? vals.totalFileSize ?? vals.fileSize ?? 0)
+                measuring = false
+            }
+
+            let kind = isSymlink ? "Alias / Symlink"
+                : isPackage ? (url.pathExtension.lowercased() == "app" ? "Application" : "Package")
+                : isDir ? "Folder"
+                : (url.pathExtension.isEmpty ? "File" : url.pathExtension.uppercased())
+
+            items.append(StorageItem(
+                url: url,
+                name: url.lastPathComponent,
+                size: size,
+                isDirectory: isDir,
+                isPackage: isPackage,
+                isMeasuring: measuring,
+                modifiedDate: vals.contentModificationDate,
+                kind: kind,
+                parentDisplayPath: abbreviateHome(url.deletingLastPathComponent().path, homePath: homePath)
+            ))
+        }
+
+        return items.sorted {
+            if $0.size != $1.size { return $0.size > $1.size }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
     }
 
     // MARK: - Safe Move to Trash

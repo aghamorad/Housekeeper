@@ -26,6 +26,7 @@ extension Notification.Name {
     static let housekeepingOpenSpeedTest = Notification.Name("HousekeepingOpenSpeedTest")
     static let housekeepingOpenRouteSweep = Notification.Name("HousekeepingOpenRouteSweep")
     static let housekeepingOpenPermissionsDoctor = Notification.Name("HousekeepingOpenPermissionsDoctor")
+    static let housekeepingOpenQuickJump = Notification.Name("HousekeepingOpenQuickJump")
     /// Opens the housekeeper already holding a topic. The topic itself travels as
     /// the notification's object, because a reading is the reason it was opened.
     static let housekeepingAskAbout = Notification.Name("HousekeepingAskAbout")

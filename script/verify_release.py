@@ -50,8 +50,7 @@ inputs = []
 for token in shlex.split(block):
     inputs.extend(Path(p) for p in sorted(glob.glob(token.replace('$ROOT_DIR', str(root)))))
 inputs.append(root / 'Housekeeping/Info.plist')
-inputs.append(root / 'script/render_app_icon.swift')
-inputs.append(root / 'Housekeeping/Resources/BenignMonster/mascot.png')
+inputs.append(root / 'Housekeeping/Resources/AppIcon.png')
 cmd = f"shasum -a 256 {' '.join(shlex.quote(str(p)) for p in inputs)} | shasum -a 256 | awk '{{print $1}}'"
 digest = subprocess.check_output(cmd, shell=True, text=True).strip()
 assert info['HousekeepingSourceDigest'] == digest, f"Packaged Swift/Info inputs differ from checkout ({info['HousekeepingSourceDigest']} vs {digest})"

@@ -32,13 +32,14 @@ final class RoutesModel: ObservableObject {
     @Published private(set) var locations: [VPNLocation] = []
     @Published var selectedKeys: Set<String> = []
     @Published var searchText: String = ""
+    @Published var selectedRegion: VPNRegion = .all
     @Published var granularity: Granularity = .city {
         didSet {
-            guard granularity != oldValue else { return }
-            // Selection keys are not comparable across granularities.
-            selectedKeys.removeAll()
+            guard granularity != oldValue, !suppressGranularityTranslation else { return }
+            translateSelection(from: oldValue, to: granularity)
         }
     }
+    private var suppressGranularityTranslation = false
 
     // MARK: - Protocols and ports
 
@@ -64,7 +65,11 @@ final class RoutesModel: ObservableObject {
     @Published var uiMode: UIMode = .simple {
         didSet {
             guard uiMode != oldValue else { return }
-            prepareSimpleMode()
+            // Switching to Advanced keeps the reader's exact current locations,
+            // protocols and ports intact so nothing is unexpectedly overwritten.
+            if uiMode == .simple {
+                prepareSimpleMode()
+            }
         }
     }
 
@@ -76,7 +81,7 @@ final class RoutesModel: ObservableObject {
         }
     }
 
-    @Published var simpleDepth: RouteDepth = .quick {
+    @Published var simpleDepth: RouteDepth = .superQuick {
         didSet {
             guard simpleDepth != oldValue else { return }
             applySimplePreset()
@@ -97,11 +102,10 @@ final class RoutesModel: ObservableObject {
         }
     }
 
-    /// A spread of nearby and well-connected countries, used only until the
-    /// reader picks for themselves.
+    /// Three fast, well-connected starter countries so Simple mode starts with
+    /// a ~1-minute sweep rather than a 90-minute marathon.
     static let starterCountries = [
-        "Turkey", "United Arab Emirates", "Armenia", "Georgia",
-        "Germany", "Netherlands", "France", "Qatar",
+        "Turkey", "United Arab Emirates", "Germany"
     ]
 
     let engine = RouteEngine()
@@ -175,19 +179,34 @@ final class RoutesModel: ObservableObject {
         applySimplePreset()
     }
 
-    /// Turns the three simple choices into the engine's real settings.
+    /// Turns the simple choices into the engine's real settings.
     func applySimplePreset() {
         let depth = simpleDepth
-        granularity = depth == .quick ? .city : .datacenter
+        let targetGranularity: Granularity = (depth == .superQuick || depth == .quick) ? .city : .datacenter
+        if granularity != targetGranularity {
+            suppressGranularityTranslation = true
+            granularity = targetGranularity
+            suppressGranularityTranslation = false
+        }
 
         let supported = Set(protocols.map(\.id))
         var wanted: Set<String>
         switch depth {
-        case .quick: wanted = ["tcp"]
-        case .thorough: wanted = ["tcp", "udp"]
-        case .careful: wanted = supported
+        case .superQuick:
+            wanted = supported.contains("wireguard") ? ["wireguard"] : (supported.contains("tcp") ? ["tcp"] : supported)
+        case .quick:
+            wanted = ["wireguard", "tcp"]
+        case .standard:
+            wanted = ["wireguard", "tcp", "udp"]
+        case .thorough:
+            wanted = ["wireguard", "tcp", "udp", "stealth"]
+        case .careful:
+            wanted = supported
         }
         wanted.formIntersection(supported)
+        if wanted.isEmpty, let first = protocols.first {
+            wanted = [first.id]
+        }
         selectedProtocols = wanted.isEmpty ? supported : wanted
 
         // Derived from the protocol choice above, so it is read after it.
@@ -197,7 +216,8 @@ final class RoutesModel: ObservableObject {
         } else {
             let preferred: Set<Int>
             switch depth {
-            case .quick: preferred = [443]
+            case .superQuick, .quick: preferred = [443]
+            case .standard: preferred = [443, 80]
             case .thorough: preferred = [443, 80, 1194]
             case .careful: preferred = Set(commonPorts)
             }
@@ -206,32 +226,73 @@ final class RoutesModel: ObservableObject {
         }
 
         switch depth {
+        case .superQuick:
+            options.connectTimeout = 12
+            options.runFetchProbe = false
+            options.pingCount = 2
+            options.settleSeconds = 0
+            options.cooldownSeconds = 0.25
         case .quick:
+            options.connectTimeout = 16
             options.runFetchProbe = false
             options.pingCount = 3
             options.settleSeconds = 0
-        case .thorough:
+            options.cooldownSeconds = 0.35
+        case .standard:
+            options.connectTimeout = 25
             options.runFetchProbe = true
             options.pingCount = 4
             options.settleSeconds = 0.5
+            options.cooldownSeconds = 0.5
+        case .thorough:
+            options.connectTimeout = 35
+            options.runFetchProbe = true
+            options.pingCount = 5
+            options.settleSeconds = 0.75
+            options.cooldownSeconds = 0.75
         case .careful:
+            options.connectTimeout = 45
             options.runFetchProbe = true
             options.pingCount = 8
             options.settleSeconds = 1.5
+            options.cooldownSeconds = 0.75
         }
         options.randomizeOrder = false
 
         applySimpleCountries()
     }
 
-    /// Re-applies the simple picks. Selection keys are not comparable across
-    /// granularities, so this runs again after any change to either.
+    /// Re-applies the simple picks. In Super Quick mode, selects just 1 primary
+    /// city per picked country so even 10 countries finish in ~2 minutes.
     func applySimpleCountries() {
         searchText = ""
+        selectedRegion = .all
         selectedKeys.removeAll()
         let known = Set(countries)
-        for country in simpleCountries.sorted() where known.contains(country) {
-            select(country: country)
+        let sortedCountries = simpleCountries.sorted().filter(known.contains)
+        if simpleDepth == .superQuick && granularity == .city {
+            for country in sortedCountries {
+                if let firstCity = rowsForSelection.first(where: { $0.country == country }) {
+                    selectedKeys.insert(firstCity.id)
+                }
+            }
+        } else {
+            for country in sortedCountries {
+                select(country: country)
+            }
+        }
+    }
+
+    private func translateSelection(from oldGranularity: Granularity, to newGranularity: Granularity) {
+        let oldKeys = selectedKeys
+        guard !oldKeys.isEmpty else { return }
+
+        if oldGranularity == .city && newGranularity == .datacenter {
+            let matchingIDs = locations.filter { oldKeys.contains("\($0.countryCode)|\($0.city)") }.map(\.id)
+            selectedKeys = Set(matchingIDs)
+        } else if oldGranularity == .datacenter && newGranularity == .city {
+            let matchingCities = locations.filter { oldKeys.contains($0.id) }.map { "\($0.countryCode)|\($0.city)" }
+            selectedKeys = Set(matchingCities)
         }
     }
 
@@ -259,25 +320,26 @@ final class RoutesModel: ObservableObject {
     // MARK: - Locations
 
     /// Every location the client can be tried against, grouped and filtered.
-    var rows: [LocationRow] { groupedRows(matching: searchText) }
+    var rows: [LocationRow] { groupedRows(matching: searchText, region: selectedRegion) }
 
     /// Pure, so it can be called from a view body without touching published
     /// state. A getter that wrote to `searchText` to see the unfiltered list
     /// would re-invalidate the view on every read and never settle.
-    private func groupedRows(matching query: String) -> [LocationRow] {
+    private func groupedRows(matching query: String, region: VPNRegion = .all) -> [LocationRow] {
+        let regionFiltered = region == .all ? locations : locations.filter { $0.region == region }
         let grouped: [LocationRow]
 
         switch granularity {
         case .city:
             var byCity: [String: [VPNLocation]] = [:]
-            for loc in locations {
+            for loc in regionFiltered {
                 byCity["\(loc.countryCode)|\(loc.city)", default: []].append(loc)
             }
             grouped = byCity.map { key, members in
                 LocationRow(id: key, representative: members[0], members: members)
             }
         case .datacenter:
-            grouped = locations.map {
+            grouped = regionFiltered.map {
                 LocationRow(id: $0.id, representative: $0, members: [$0])
             }
         }
@@ -291,8 +353,8 @@ final class RoutesModel: ObservableObject {
         }
 
         return filtered.sorted {
-            ($0.representative.country, $0.representative.city)
-                < ($1.representative.country, $1.representative.city)
+            ($0.representative.country, $0.representative.city, $0.representative.node)
+                < ($1.representative.country, $1.representative.city, $1.representative.node)
         }
     }
 
@@ -304,8 +366,17 @@ final class RoutesModel: ObservableObject {
         selectedKeys.formUnion(rows.map(\.id))
     }
 
+    func selectOnePerVisibleCountry() {
+        var seenCountries = Set<String>()
+        for row in rows {
+            if seenCountries.insert(row.country).inserted {
+                selectedKeys.insert(row.id)
+            }
+        }
+    }
+
     func select(country: String) {
-        let keys = rows.filter { $0.country == country }.map(\.id)
+        let keys = rowsForSelection.filter { $0.country == country }.map(\.id)
         selectedKeys.formUnion(keys)
     }
 
@@ -318,7 +389,7 @@ final class RoutesModel: ObservableObject {
 
     /// Built from the unfiltered list so that narrowing the search box does
     /// not silently drop locations that are already selected.
-    private var rowsForSelection: [LocationRow] { groupedRows(matching: "") }
+    private var rowsForSelection: [LocationRow] { groupedRows(matching: "", region: .all) }
 
     // MARK: - Ports
 
@@ -383,10 +454,10 @@ final class RoutesModel: ObservableObject {
 
     /// Rough wall-clock estimate: connect plus probes plus teardown per route.
     var estimatedSeconds: Double {
-        let perRoute = min(options.connectTimeout, 14)
+        let perRoute = min(options.connectTimeout, 12) * 0.75
             + options.settleSeconds
-            + Double(options.pingCount) * 0.5
-            + (options.runFetchProbe ? 2.5 : 0)
+            + Double(options.pingCount) * 0.45
+            + (options.runFetchProbe ? 2.0 : 0)
             + options.cooldownSeconds
             + 1.0
         return Double(targets.count) * perRoute

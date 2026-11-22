@@ -453,23 +453,103 @@ final class AppUpdateEngine {
             return UpdateOutcome(id: name, name: name, message: "Updated with Homebrew.", succeeded: true)
         }
 
-        // When Homebrew or a cask requires sudo / administrator privileges, prompt via macOS authorization dialog
         let combined = (result.stderr + "\n" + result.stdout).lowercased()
-        if combined.contains("sudo") || combined.contains("permission") || combined.contains("password") || isCask {
-            let escapedBrew = brew.replacingOccurrences(of: "\"", with: "\\\"")
-            let subCmd = isCask ? "upgrade --cask \(name)" : "upgrade \(name)"
-            let appleScriptSource = "do shell script \"\(escapedBrew) \(subCmd)\" with administrator privileges"
-            var errDict: NSDictionary?
-            if let appleScript = NSAppleScript(source: appleScriptSource) {
-                let _ = appleScript.executeAndReturnError(&errDict)
-                if errDict == nil {
-                    return UpdateOutcome(id: name, name: name, message: "Updated with Homebrew (Administrator privileges granted).", succeeded: true)
-                }
+
+        // Homebrew refuses to run as root (`with administrator privileges`), so
+        // when a cask installer (.pkg) or permission step needs sudo, run `brew`
+        // as the normal user with SUDO_ASKPASS pointing at a native macOS dialog.
+        if combined.contains("sudo") || combined.contains("password") || combined.contains("a password is required") {
+            let askpassResult = try await runBrewWithAskpass(brew: brew, arguments: arguments, packageName: name)
+            try Task.checkCancellation()
+            if askpassResult.succeeded {
+                return UpdateOutcome(id: name, name: name, message: "Updated with Homebrew (Administrator privileges granted).", succeeded: true)
+            }
+            let askCombined = (askpassResult.stderr + "\n" + askpassResult.stdout).lowercased()
+            if askCombined.contains("user canceled") || askCombined.contains("cancelled") || askCombined.contains("no password") {
+                return UpdateOutcome(id: name, name: name, message: "Administrator password prompt was cancelled.", succeeded: false)
+            }
+            let detail = meaningfulErrorSummary(stderr: askpassResult.stderr, stdout: askpassResult.stdout)
+                ?? "Homebrew could not complete the privileged update."
+            return UpdateOutcome(id: name, name: name, message: detail, succeeded: false)
+        }
+
+        // Formula upgraded in Cellar but `brew link` hit a stale symlink or file
+        // conflict inside the Homebrew prefix (e.g. ca-certificates / python tools).
+        if !isCask && (combined.contains("brew link") || combined.contains("could not symlink")) {
+            if await repairBrewLink(brew: brew, formula: name) {
+                return UpdateOutcome(id: name, name: name, message: "Updated and relinked with Homebrew.", succeeded: true)
             }
         }
 
-        let detail = lastMeaningfulLine(result.stderr) ?? lastMeaningfulLine(result.stdout) ?? "Homebrew reported an error."
+        let detail = meaningfulErrorSummary(stderr: result.stderr, stdout: result.stdout) ?? "Homebrew reported an error."
         return UpdateOutcome(id: name, name: name, message: detail, succeeded: false)
+    }
+
+    private func runBrewWithAskpass(
+        brew: String,
+        arguments: [String],
+        packageName: String
+    ) async throws -> ProcessRunner.Result {
+        let dir = fileManager.temporaryDirectory.appendingPathComponent("hk-askpass-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+        defer { discardToTrash(dir) }
+
+        let scriptURL = dir.appendingPathComponent("askpass.sh")
+        let safePromptName = packageName.replacingOccurrences(of: "\"", with: "")
+            .replacingOccurrences(of: "\\", with: "")
+        let scriptBody = """
+        #!/bin/sh
+        /usr/bin/osascript -e 'Tell application "System Events" to display dialog "Housekeeper needs your Mac password to finish updating \(safePromptName)." with title "Housekeeper Update" with icon caution default answer "" with hidden answer' -e 'text returned of result' 2>/dev/null
+        """
+        try scriptBody.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scriptURL.path)
+
+        var env = ProcessInfo.processInfo.environment
+        env["SUDO_ASKPASS"] = scriptURL.path
+        env["HOME"] = fileManager.homeDirectoryForCurrentUser.path
+        return try await runner.run(executable: brew, arguments: arguments, environment: env, timeout: 600)
+    }
+
+    private func repairBrewLink(brew: String, formula: String) async -> Bool {
+        _ = try? await runner.run(executable: brew, arguments: ["unlink", formula], timeout: 60)
+        if let relink = try? await runner.run(executable: brew, arguments: ["link", formula], timeout: 60),
+           relink.succeeded {
+            return true
+        }
+        guard let dryRun = try? await runner.run(
+            executable: brew,
+            arguments: ["link", "--overwrite", "--dry-run", formula],
+            timeout: 60
+        ) else {
+            return false
+        }
+        let prefix = (brew as NSString).deletingLastPathComponent.replacingOccurrences(of: "/bin", with: "")
+        let lines = (dryRun.stdout + "\n" + dryRun.stderr)
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.hasPrefix("/") }
+        // Only auto-overwrite files already inside Homebrew's own prefix.
+        guard lines.allSatisfy({ $0.hasPrefix(prefix + "/") }) else { return false }
+        if let forced = try? await runner.run(executable: brew, arguments: ["link", "--overwrite", formula], timeout: 60) {
+            return forced.succeeded
+        }
+        return false
+    }
+
+    private func meaningfulErrorSummary(stderr: String, stdout: String) -> String? {
+        let lines = (stderr + "\n" + stdout)
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let errorLines = lines.filter {
+            let lower = $0.lowercased()
+            return lower.hasPrefix("error:") || lower.contains("target ") || lower.contains("already exists") || lower.contains("sudo:")
+        }
+        if !errorLines.isEmpty {
+            return errorLines.prefix(2).joined(separator: " ")
+        }
+        return lines.last
     }
 
     private func upgradeViaStore(adamID: String) async throws -> UpdateOutcome {
@@ -566,38 +646,49 @@ final class AppUpdateEngine {
         let oldTeam = application.team
         let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
-        let workspace = downloads.appendingPathComponent("Housekeeping Updates", isDirectory: true)
-        try fileManager.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let workspaceRoot = downloads.appendingPathComponent("Housekeeping Updates", isDirectory: true)
+        try fileManager.createDirectory(at: workspaceRoot, withIntermediateDirectories: true)
+
+        // Sweep any leftover loose files from interrupted earlier runs so mounts never collide.
+        for staleName in ["download.dmg", "download.zip", "mounted", "extracted"] {
+            let staleURL = workspaceRoot.appendingPathComponent(staleName)
+            if fileManager.fileExists(atPath: staleURL.path) {
+                discardToTrash(staleURL)
+            }
+        }
+
+        let runWorkspace = workspaceRoot.appendingPathComponent("run-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: runWorkspace, withIntermediateDirectories: true)
 
         var mountedVolume: URL?
         defer {
             if let mountedVolume {
-                // Best-effort detach; a failure here does not fail the update,
-                // which by this point has either succeeded or already reported.
+                // Best-effort detach before moving the run workspace to Trash.
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
                 process.arguments = ["detach", mountedVolume.path, "-force"]
                 try? process.run()
                 process.waitUntilExit()
             }
+            discardToTrash(runWorkspace)
         }
 
-        // 1. Fetch.
-        let downloaded = try await fetch(download, into: workspace)
+        // 1. Fetch into the isolated run workspace.
+        let downloaded = try await fetch(download, into: runWorkspace)
         try Task.checkCancellation()
 
-        // 2. Open the container and take the application out of it.
+        // 2. Open the container and locate the application bundle.
         let incoming: URL
         switch download.kind {
         case .diskImage:
-            let mounted = try await mount(downloaded, into: workspace)
+            let mounted = try await mount(downloaded, into: runWorkspace)
             mountedVolume = mounted
             guard let found = locateApplication(in: mounted, matching: application) else {
                 throw UpdateFailure.noApplicationInDownload
             }
             incoming = found
         case .zip:
-            let extracted = try await unzip(downloaded, into: workspace)
+            let extracted = try await unzip(downloaded, into: runWorkspace)
             guard let found = locateApplication(in: extracted, matching: application) else {
                 throw UpdateFailure.noApplicationInDownload
             }
@@ -607,16 +698,37 @@ final class AppUpdateEngine {
         }
         try Task.checkCancellation()
 
-        // 3. Verify the new copy before anything is moved. A different identifier
-        //    means the download is not this application; a different signer means
-        //    it is this application from somewhere else, and neither is a swap
-        //    Housekeeping is willing to make.
-        if let info = AppInventory.readInfoPlist(bundleAt: incoming),
+        // 3. Stage the incoming bundle on local APFS using `ditto` BEFORE touching
+        //    the installed app. Never call `FileManager.moveItem` directly from a
+        //    read-only mounted `.dmg`: Foundation copies the bundle to `/Applications`
+        //    and then throws when it cannot unlink the read-only source, leaving an
+        //    "item with the same name already exists" collision behind.
+        let destination = application.url
+        let stagingDir = runWorkspace.appendingPathComponent("staged", isDirectory: true)
+        try fileManager.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        let stagedBundle = stagingDir.appendingPathComponent(destination.lastPathComponent)
+
+        let copyStage = try await runner.run(
+            executable: "/usr/bin/ditto",
+            arguments: [incoming.path, stagedBundle.path],
+            timeout: 180
+        )
+        guard copyStage.succeeded, fileManager.fileExists(atPath: stagedBundle.path) else {
+            throw UpdateFailure.extraction("Housekeeping could not stage the new copy of \(application.name): \(lastMeaningfulLine(copyStage.stderr) ?? "ditto failed").")
+        }
+        _ = try? await runner.run(
+            executable: "/usr/bin/xattr",
+            arguments: ["-dr", "com.apple.quarantine", stagedBundle.path],
+            timeout: 30
+        )
+
+        // 4. Verify the staged copy before anything installed is moved.
+        if let info = AppInventory.readInfoPlist(bundleAt: stagedBundle),
            let identifier = info["CFBundleIdentifier"] as? String,
            identifier != application.bundleIdentifier {
             throw UpdateFailure.identityChanged(identifier)
         }
-        let newSignature = await AppProvenance.readSignature(bundleAt: incoming, using: runner)
+        let newSignature = await AppProvenance.readSignature(bundleAt: stagedBundle, using: runner)
         if let oldTeam, let newTeam = newSignature.teamIdentifier, newTeam != oldTeam {
             throw UpdateFailure.signerChanged(from: oldTeam, to: newTeam)
         }
@@ -624,32 +736,41 @@ final class AppUpdateEngine {
             throw UpdateFailure.signerMissing(application.name)
         }
 
-        // 4. The swap. Cancellation is checked once more immediately before, so a
-        //    Stop that arrived during the download stops here rather than after.
+        // 5. Atomic swap: move old bundle to Trash backup, ensure destination is clear,
+        //    and move/copy the verified staged bundle into place.
         try Task.checkCancellation()
-        let destination = application.url
         let backupDirectory = try updateBackupDirectory()
-        let backup = backupDirectory.appendingPathComponent("\(application.name)-\(stamp()).app")
+        let backup = uniqueBackupURL(in: backupDirectory, appName: application.name)
 
         do {
-            try fileManager.moveItem(at: destination, to: backup)
+            try moveBundle(from: destination, to: backup)
         } catch {
-            throw UpdateFailure.swapFailed("Housekeeping could not move the existing copy aside: \(error.localizedDescription)")
+            if let adminError = await moveBundleWithAdminIfNeeded(from: destination, to: backup) {
+                throw UpdateFailure.swapFailed("Housekeeping could not move the existing copy aside: \(adminError)")
+            }
+        }
+
+        // Guard against case-insensitive or pre-existing sibling collision at destination.
+        if fileManager.fileExists(atPath: destination.path) {
+            let extraBackup = uniqueBackupURL(in: backupDirectory, appName: "\(application.name)-existing")
+            do {
+                try moveBundle(from: destination, to: extraBackup)
+            } catch {
+                _ = await moveBundleWithAdminIfNeeded(from: destination, to: extraBackup)
+            }
         }
 
         do {
-            // A move is instant on the same volume and the usual case. It fails
-            // across volumes and off a read-only mounted disk image, where the
-            // copy is the only option.
-            do {
-                try fileManager.moveItem(at: incoming, to: destination)
-            } catch {
-                try fileManager.copyItem(at: incoming, to: destination)
-            }
+            try await placeBundle(from: stagedBundle, to: destination)
         } catch {
-            // 5. Put the original back. This is the whole reason the old copy was
-            //    moved rather than deleted.
-            try? fileManager.moveItem(at: backup, to: destination)
+            // If placing left a partial copy at destination, move it to Trash before restoring.
+            if fileManager.fileExists(atPath: destination.path) {
+                let failedCopy = uniqueBackupURL(in: backupDirectory, appName: "\(application.name)-partial")
+                try? moveBundle(from: destination, to: failedCopy)
+            }
+            if (try? moveBundle(from: backup, to: destination)) == nil {
+                _ = await moveBundleWithAdminIfNeeded(from: backup, to: destination)
+            }
             throw UpdateFailure.swapFailed("Housekeeping could not place the new copy: \(error.localizedDescription). The previous copy was put back.")
         }
 
@@ -659,6 +780,100 @@ final class AppUpdateEngine {
             message: "Replaced with \(download.version). The previous copy is kept at \(escaped(backup)).",
             succeeded: true
         )
+    }
+
+    private func uniqueBackupURL(in directory: URL, appName: String) -> URL {
+        let base = "\(appName)-\(stamp())"
+        var candidate = directory.appendingPathComponent("\(base).app")
+        var counter = 2
+        while fileManager.fileExists(atPath: candidate.path) {
+            candidate = directory.appendingPathComponent("\(base)-\(counter).app")
+            counter += 1
+        }
+        return candidate
+    }
+
+    private func sameVolume(_ a: URL, _ bParent: URL) -> Bool {
+        let volA = (try? a.resourceValues(forKeys: [.volumeIdentifierKey]))?.volumeIdentifier as? NSObject
+        let volB = (try? bParent.resourceValues(forKeys: [.volumeIdentifierKey]))?.volumeIdentifier as? NSObject
+        guard let volA, let volB else { return false }
+        return volA.isEqual(volB)
+    }
+
+    private func moveBundle(from source: URL, to destination: URL) throws {
+        if sameVolume(source, destination.deletingLastPathComponent()) {
+            try fileManager.moveItem(at: source, to: destination)
+        } else {
+            let status = Process()
+            status.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+            status.arguments = [source.path, destination.path]
+            try status.run()
+            status.waitUntilExit()
+            guard status.terminationStatus == 0 else {
+                throw UpdateFailure.swapFailed("Could not copy \(source.lastPathComponent) across volumes.")
+            }
+            try fileManager.removeItem(at: source)
+        }
+    }
+
+    private func placeBundle(from staged: URL, to destination: URL) async throws {
+        if sameVolume(staged, destination.deletingLastPathComponent()) {
+            do {
+                try fileManager.moveItem(at: staged, to: destination)
+                return
+            } catch {
+                // Fall back to ditto + admin below if direct rename failed.
+                if fileManager.fileExists(atPath: destination.path) {
+                    discardToTrash(destination)
+                }
+            }
+        }
+
+        let copyRes = try await runner.run(
+            executable: "/usr/bin/ditto",
+            arguments: [staged.path, destination.path],
+            timeout: 180
+        )
+        if copyRes.succeeded { return }
+
+        if let adminError = await copyBundleWithAdminIfNeeded(from: staged, to: destination) {
+            throw UpdateFailure.swapFailed(adminError)
+        }
+    }
+
+    @MainActor
+    private func runAdminShell(_ command: String) -> String? {
+        let escaped = command
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let source = "do shell script \"\(escaped)\" with administrator privileges"
+        var errDict: NSDictionary?
+        if let script = NSAppleScript(source: source) {
+            _ = script.executeAndReturnError(&errDict)
+            if let errDict {
+                return (errDict[NSAppleScript.errorBriefMessage] as? String)
+                    ?? (errDict[NSAppleScript.errorMessage] as? String)
+                    ?? "Administrator authorization failed."
+            }
+            return nil
+        }
+        return "Could not run administrator authorization."
+    }
+
+    private func moveBundleWithAdminIfNeeded(from source: URL, to destination: URL) async -> String? {
+        let qSrc = shellQuote(source.path)
+        let qDst = shellQuote(destination.path)
+        return await runAdminShell("/bin/mv \(qSrc) \(qDst)")
+    }
+
+    private func copyBundleWithAdminIfNeeded(from source: URL, to destination: URL) async -> String? {
+        let qSrc = shellQuote(source.path)
+        let qDst = shellQuote(destination.path)
+        return await runAdminShell("/usr/bin/ditto \(qSrc) \(qDst) && /usr/bin/xattr -dr com.apple.quarantine \(qDst) 2>/dev/null || true")
+    }
+
+    private func shellQuote(_ path: String) -> String {
+        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     // MARK: - Container handling

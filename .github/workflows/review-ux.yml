@@ -25,12 +25,11 @@ jobs:
           python3 script/audit_ui_controls.py
       - name: Test selection, cleanup safety, and recovery
         run: bash script/test_safety.sh
-      - name: Generate the actual icon from the canonical mascot
+      - name: Build the definitive app icon
         run: |
           bash script/generate_app_icon.sh "$RUNNER_TEMP/housekeeping-icon"
           test -s "$RUNNER_TEMP/housekeeping-icon/AppIcon.icns"
-          test -s "$RUNNER_TEMP/housekeeping-icon/Icon-01-Background.png"
-          test -s "$RUNNER_TEMP/housekeeping-icon/Icon-02-Octopus-Foreground.png"
+          test -s "$RUNNER_TEMP/housekeeping-icon/AppIcon-1024.png"
       - name: Upload reviewable icon artwork (never a shipping app)
         uses: actions/upload-artifact@v4
         with:

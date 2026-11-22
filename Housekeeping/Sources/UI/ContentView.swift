@@ -12,6 +12,8 @@ struct ContentView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.openWindow) private var openWindow
     @State private var showAdvancedTools: Bool = false
+    @State private var showQuickJump: Bool = false
+    @State private var quickJumpQuery: String = ""
 
 
     /// The view a sheet shows, one screen per case. Each is given the
@@ -72,7 +74,7 @@ struct ContentView: View {
 
         Group {
             if let workspace = appState.workspace {
-                ScreenChrome(title: "Housekeeper") {
+                ScreenChrome(title: workspaceTitle(workspace), subtitle: workspaceSubtitle(workspace)) {
                     sheetBody(workspace)
                         .id(workspace.rawValue)
                         .transition(.opacity.combined(with: .offset(y: 5)))
@@ -87,8 +89,21 @@ struct ContentView: View {
             .animation(.spring(response: 0.28, dampingFraction: 0.88), value: appState.workspace)
             .environment(\.uiStyle, style)
             .housekeepingSurface(style)
-            // The tools share one navigable window; the rail scrolls when needed.
-            .frame(minWidth: 940, minHeight: 620)
+            // Support resizing all the way into native macOS Full Screen.
+            .frame(minWidth: 940, maxWidth: .infinity, minHeight: 620, maxHeight: .infinity)
+            .background(WindowFullScreenConfigurator().frame(width: 0, height: 0))
+            .overlay {
+                if showQuickJump {
+                    QuickJumpPalette(
+                        query: $quickJumpQuery,
+                        isPresented: $showQuickJump,
+                        items: quickJumpDestinations
+                    )
+                    .environment(\.uiStyle, style)
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                }
+            }
+            .animation(.spring(response: 0.22, dampingFraction: 0.88), value: showQuickJump)
             // Contextual help and confirmations stay above the active workspace.
             .sheet(item: $appState.presentedScreen) { screen in
                 sheetBody(screen)
@@ -110,8 +125,140 @@ struct ContentView: View {
             .onAppear {
                 WindowOpener.shared.register { openWindow(id: "main") }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenQuickJump)) { _ in
+                quickJumpQuery = ""
+                showQuickJump.toggle()
+            }
             .modifier(PrimaryNotificationsModifier(appState: appState))
             .modifier(ToolNotificationsModifier(appState: appState))
+    }
+
+    private func workspaceTitle(_ screen: AppState.Screen) -> String {
+        switch screen {
+        case .clean: return "Clean Up"
+        case .diskBrowser: return "Space Lens"
+        case .reconcile: return "Two Folders Diff"
+        case .updateList: return "Update Apps"
+        case .setupCheck: return "Terminal Health"
+        case .routes: return "Route Sweep"
+        case .phone: return "Spoof Location"
+        case .mediaDock: return "Media Studio"
+        case .bookbind: return "Bookbind Studio"
+        case .quarantine: return "Quarantine"
+        case .protectionList: return "Protected Items"
+        case .localModels: return "Local AI Models"
+        case .fanControl: return "Cooling & Fans"
+        case .uninstaller: return "Uninstall Apps"
+        case .appRepair: return "Repair Damaged Apps"
+        case .batteryHealth: return "Battery Health"
+        case .vpnTunnels: return "VPN Tunnels"
+        case .dnsSwitcher: return "DNS Switcher"
+        case .speedTest: return "Speed Test"
+        case .backgroundActivity: return "Background Activity"
+        case .permissionsDoctor: return "Fix Permissions"
+        default: return "Housekeeper"
+        }
+    }
+
+    private func workspaceSubtitle(_ screen: AppState.Screen) -> String {
+        switch screen {
+        case .clean: return "Caches, installers, large files, and Trash"
+        case .diskBrowser: return "Browse folders and search inside your drive"
+        case .reconcile: return "Compare two folders side by side"
+        case .updateList: return "Apps, Homebrew, and App Store updates"
+        case .setupCheck: return "Shell PATH, links, and CLI health"
+        case .routes: return "Find fast, working VPN routes"
+        case .phone: return "USB GPS location helper for iPhone"
+        case .mediaDock: return "Audio & video downloader"
+        case .bookbind: return "Merge loose audio into chaptered M4B"
+        case .quarantine: return "Recoverable holding folder (30-day safety net)"
+        case .protectionList: return "Folders & apps kept untouched"
+        case .localModels: return "Manage local MLX and Ollama models"
+        case .fanControl: return "Live thermal sensors and cooling"
+        case .uninstaller: return "Remove apps along with leftover files"
+        case .appRepair: return "Clear Gatekeeper & damaged app blocks"
+        case .batteryHealth: return "Cycle count, wear, and sleep drain"
+        case .vpnTunnels: return "Inspect active utun tunnels and services"
+        case .dnsSwitcher: return "1-click DNS presets and reset"
+        case .speedTest: return "Download, upload, ping, and jitter"
+        case .backgroundActivity: return "Inspect running tasks and login items"
+        case .permissionsDoctor: return "1-click repairs for permissions & proxies"
+        default: return ""
+        }
+    }
+
+    private var quickJumpDestinations: [QuickJumpDestination] {
+        [
+            QuickJumpDestination(id: "home", title: "Dashboard", subtitle: "Home overview & storage health", icon: "square.grid.2x2", keywords: "home overview start") {
+                appState.goHomeWorkspace()
+            },
+            QuickJumpDestination(id: "clean", title: "Clean Up", subtitle: "Safe junk, caches, installers, Trash", icon: "sparkles", keywords: "junk cache logs purge") {
+                appState.showClean = true
+            },
+            QuickJumpDestination(id: "scan", title: "Scan My Mac", subtitle: "Full system cleanup scan", icon: "magnifyingglass", keywords: "scan mac inspect") {
+                appState.startScan()
+            },
+            QuickJumpDestination(id: "space", title: "Space Lens & Folder Search", subtitle: "Explore folders, search subfolders, find large files", icon: "internaldrive", keywords: "disk storage folders search files apps") {
+                appState.showDiskBrowser = true
+            },
+            QuickJumpDestination(id: "routes", title: "Route Sweep", subtitle: "Test VPN servers, cities & protocols", icon: "network", keywords: "vpn windscribe surfshark expressvpn routes") {
+                appState.showRoutes = true
+            },
+            QuickJumpDestination(id: "updates", title: "Update Apps", subtitle: "Mac apps, Homebrew, App Store", icon: "arrow.triangle.2.circlepath", keywords: "brew cask upgrade apps") {
+                appState.showUpdateList = true
+            },
+            QuickJumpDestination(id: "uninstall", title: "Uninstall Apps", subtitle: "Remove apps and leftovers cleanly", icon: "xmark.app", keywords: "remove delete app leftovers") {
+                appState.showUninstaller = true
+            },
+            QuickJumpDestination(id: "quarantine", title: "Quarantine", subtitle: "Restore moved files anytime", icon: "archivebox", keywords: "restore undo backup") {
+                appState.showQuarantineManagement = true
+            },
+            QuickJumpDestination(id: "permissions", title: "Fix Permissions (Doctor)", subtitle: "Repair dotfiles, proxies & broken agents", icon: "cross.case.fill", keywords: "doctor repair permissions proxy") {
+                appState.showPermissionsDoctor = true
+            },
+            QuickJumpDestination(id: "speed", title: "Speed Test", subtitle: "Measure download, upload & ping", icon: "speedometer", keywords: "internet speed mbps ping") {
+                appState.showSpeedTest = true
+            },
+            QuickJumpDestination(id: "dns", title: "DNS Switcher", subtitle: "1-click DNS presets", icon: "globe.badge.chevron.backward", keywords: "dns 403 network") {
+                appState.showDNSSwitcher = true
+            },
+            QuickJumpDestination(id: "vpn", title: "VPN Tunnels", subtitle: "Inspect active utun interfaces", icon: "lock.shield", keywords: "utun tunnel vpn") {
+                appState.showVPNTunnels = true
+            },
+            QuickJumpDestination(id: "fans", title: "Cooling & Fans", subtitle: "Live temps and fan speeds", icon: "fan.fill", keywords: "temperature cpu thermal") {
+                appState.showFanControl = true
+            },
+            QuickJumpDestination(id: "battery", title: "Battery Health", subtitle: "Cycles, wear, and sleep inhibitors", icon: "battery.100.bolt", keywords: "power charger cycles") {
+                appState.showBatteryHealth = true
+            },
+            QuickJumpDestination(id: "activity", title: "Background Activity", subtitle: "Running processes & login items", icon: "list.bullet.rectangle", keywords: "cpu memory processes") {
+                appState.showBackgroundActivity = true
+            },
+            QuickJumpDestination(id: "repair", title: "Repair Damaged Apps", subtitle: "Fix Gatekeeper & quarantine flags", icon: "bandage.fill", keywords: "gatekeeper damaged xattr") {
+                appState.showAppRepair = true
+            },
+            QuickJumpDestination(id: "terminal", title: "Terminal Health", subtitle: "Audit shell PATH & CLI links", icon: "wrench.and.screwdriver", keywords: "path cli brew symlinks") {
+                appState.showSetupCheck = true
+            },
+            QuickJumpDestination(id: "models", title: "Local AI Models", subtitle: "MLX, Ollama & Hugging Face storage", icon: "cpu", keywords: "llm mlx ollama") {
+                appState.showLocalModels = true
+            },
+            QuickJumpDestination(id: "diff", title: "Two Folders Diff", subtitle: "Compare two folders side by side", icon: "arrow.left.arrow.right", keywords: "reconcile compare sync") {
+                appState.showReconcile = true
+            },
+            QuickJumpDestination(id: "mediadock", title: "Media Studio (MediaDock 9)", subtitle: "Download audio & video", icon: "play.rectangle.fill", keywords: "youtube spotify music") {
+                appState.showMediaDock = true
+            },
+            QuickJumpDestination(id: "bookbind", title: "Bookbind Studio", subtitle: "Create chaptered M4B audiobooks", icon: "book.closed.fill", keywords: "audiobook m4b") {
+                appState.showBookbind = true
+            },
+            QuickJumpDestination(id: "phone", title: "Spoof Location", subtitle: "iPhone USB GPS location", icon: "location.slash", keywords: "iphone gps") {
+                appState.showPhone = true
+            },
+            QuickJumpDestination(id: "ask", title: "Ask the Housekeeper", subtitle: "Chat with local AI assistant", icon: "bubble.left.and.text.bubble.right", keywords: "ai help chat") {
+                appState.showHousekeeper = true
+            }
+        ]
     }
 }
 
@@ -263,6 +410,7 @@ private struct Screen: View {
 /// this for the same reason every screen here does. Two chromes would be two
 /// places for the appearances to drift apart.
 struct ScreenChrome<Content: View>: View {
+    @EnvironmentObject private var appState: AppState
     @Environment(\.uiStyle) private var style
     let title: String
     let subtitle: String?
@@ -285,21 +433,129 @@ struct ScreenChrome<Content: View>: View {
                     credit
                 }
             } else {
-                // Liquid Glass stands the bar on its end and moves it to the
-                // side. The readings these screens show are wide and short — a
-                // path, a size, a list of rows — so the edge is where a run of
-                // destinations costs nothing, and the top of the window is worth
-                // more to the content than it was to the buttons. The credit
-                // strip stays inside the right-hand column so it spans the
-                // content it signs rather than the rail beside it.
+                // Liquid Glass puts navigation along the left rail and a clean,
+                // responsive Back/Forward/Quick-Jump toolbar at the top so moving
+                // between workspaces feels effortless.
                 HStack(spacing: 0) {
                     JobBar()
                     VStack(spacing: 0) {
+                        modernTopBar
+                        Rectangle().fill(style.border.opacity(0.45)).frame(height: 1)
                         screen
                     }
                 }
             }
         }
+    }
+
+    private var modernTopBar: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 4) {
+                Button {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                        appState.goBackWorkspace()
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 26, height: 26)
+                        .background(Color.primary.opacity(appState.canGoBackWorkspace ? 0.06 : 0.02), in: RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+                .disabled(!appState.canGoBackWorkspace)
+                .opacity(appState.canGoBackWorkspace ? 1 : 0.35)
+                .help("Back (⌘[)")
+
+                Button {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                        appState.goForwardWorkspace()
+                    }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 26, height: 26)
+                        .background(Color.primary.opacity(appState.canGoForwardWorkspace ? 0.06 : 0.02), in: RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+                .disabled(!appState.canGoForwardWorkspace)
+                .opacity(appState.canGoForwardWorkspace ? 1 : 0.35)
+                .help("Forward (⌘])")
+
+                if appState.workspace != nil || !appState.showOverview {
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                            appState.goHomeWorkspace()
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "house")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("Home")
+                                .font(.system(size: 11.5, weight: .medium))
+                        }
+                        .padding(.horizontal, 8)
+                        .frame(height: 26)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Return to Dashboard (⌘0)")
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(style.text)
+                    .lineLimit(1)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(style.secondaryText)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                NotificationCenter.default.post(name: .housekeepingOpenQuickJump, object: nil)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11))
+                        .foregroundStyle(style.secondaryText)
+                    Text("Jump to any tool…")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(style.secondaryText)
+                    Text("⌘/")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
+                        .foregroundStyle(style.secondaryText)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 26)
+                .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(style.border, lineWidth: 0.75))
+            }
+            .buttonStyle(.plain)
+            .help("Search and jump to any Housekeeper tool (⌘/)")
+
+            Button {
+                NSApp.keyWindow?.toggleFullScreen(nil)
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .frame(width: 26, height: 26)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            .help("Toggle macOS Full Screen (⌃⌘F)")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(style.groupingBackground.opacity(0.55))
     }
 
     private var screen: some View {
@@ -1837,46 +2093,64 @@ private struct ScanningScreen: View {
     /// under it is the answer to "what is it doing", which is the question a bar
     /// alone never answers.
     private var modernBody: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 14) {
             Spacer(minLength: 8)
 
-            HeroMeter(
-                progress: Double(progress),
-                symbol: "sparkle.magnifyingglass",
-                caption: appState.scanProgress.title,
-                size: 200
-            )
+            HStack(spacing: 28) {
+                AnimatedCleaningMascotStage(
+                    mode: .scanningFolders,
+                    isActive: true,
+                    size: 132,
+                    showFolderTrack: true,
+                    accent: style.accent
+                )
+
+                HeroMeter(
+                    progress: Double(progress),
+                    symbol: "sparkle.magnifyingglass",
+                    caption: appState.scanProgress.title,
+                    size: 176
+                )
+            }
             .frame(maxWidth: .infinity)
             .entrance()
 
-            VStack(spacing: 5) {
-                Text("Reading sizes and dates. Nothing is being changed.")
+            VStack(spacing: 6) {
+                Text("Housekeeper is sweeping through your folders")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(style.text)
+                Text("Measuring sizes and dates safely. Nothing is changed or deleted.")
                     .font(style.bodyFont)
                     .foregroundStyle(style.secondaryText)
 
                 if let currentPath {
                     Text(currentPath)
                         .font(style.pathFont)
-                        .foregroundStyle(style.secondaryText.opacity(0.8))
+                        .foregroundStyle(style.secondaryText.opacity(0.85))
                         .lineLimit(1)
                         .truncationMode(.head)
                         .textSelection(.enabled)
-                        .frame(maxWidth: 520)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(style.rowBackground, in: Capsule())
+                        .overlay(Capsule().stroke(style.border, lineWidth: 0.75))
+                        .frame(maxWidth: 560)
                 }
             }
-            .padding(.top, 10)
+            .padding(.top, 4)
             .entrance(delay: 0.08)
 
             Spacer(minLength: 8)
 
             ThemeButton(
-                title: "Stop the Reading",
+                title: "Stop Scan",
                 systemImage: "stop.circle",
                 help: "Stop the scan. Nothing has been changed, so there is nothing to undo."
             ) {
                 appState.cancelScan()
             }
             .entrance(delay: 0.16)
+            .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -3222,6 +3496,156 @@ private struct ErrorScreen: View {
             .padding(24)
             .frame(maxWidth: 700, alignment: .leading)
             .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+// MARK: - Window Full Screen Configurator & Quick Jump
+
+private struct WindowFullScreenConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        FullScreenProbeView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if let window = nsView.window {
+            FullScreenProbeView.applyFullScreenSupport(to: window)
+        }
+    }
+}
+
+private final class FullScreenProbeView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window {
+            Self.applyFullScreenSupport(to: window)
+        }
+    }
+
+    static func applyFullScreenSupport(to window: NSWindow) {
+        guard window.level == .normal, window.styleMask.contains(.titled) else { return }
+        window.styleMask.insert(.resizable)
+        window.collectionBehavior.remove(.fullScreenAuxiliary)
+        window.collectionBehavior.remove(.fullScreenNone)
+        window.collectionBehavior.insert(.fullScreenPrimary)
+        window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+    }
+}
+
+private struct QuickJumpDestination: Identifiable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let icon: String
+    let keywords: String
+    let action: () -> Void
+}
+
+private struct QuickJumpPalette: View {
+    @Environment(\.uiStyle) private var style
+    @Binding var query: String
+    @Binding var isPresented: Bool
+    let items: [QuickJumpDestination]
+    @FocusState private var fieldFocused: Bool
+
+    private var filtered: [QuickJumpDestination] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return items }
+        return items.filter {
+            $0.title.lowercased().contains(needle)
+                || $0.subtitle.lowercased().contains(needle)
+                || $0.keywords.lowercased().contains(needle)
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.32)
+                .ignoresSafeArea()
+                .onTapGesture { isPresented = false }
+
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(style.accent)
+                    TextField("Jump to any tool or action…", text: $query)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 15))
+                        .focused($fieldFocused)
+                        .onSubmit {
+                            if let first = filtered.first {
+                                isPresented = false
+                                first.action()
+                            }
+                        }
+                    Button {
+                        isPresented = false
+                    } label: {
+                        Text("Esc")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.escape, modifiers: [])
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 13)
+
+                Divider()
+
+                if filtered.isEmpty {
+                    Text("No matching tools for \"\(query)\"")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .padding(28)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 2) {
+                            ForEach(filtered) { item in
+                                Button {
+                                    isPresented = false
+                                    item.action()
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: item.icon)
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundStyle(style.accent)
+                                            .frame(width: 26, height: 26)
+                                            .background(style.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 7))
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(item.title)
+                                                .font(.system(size: 13, weight: .semibold))
+                                                .foregroundStyle(style.text)
+                                            Text(item.subtitle)
+                                                .font(.system(size: 11.5))
+                                                .foregroundStyle(style.secondaryText)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "arrow.right.circle")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .hoverHighlight(cornerRadius: 8, hovered: style.rowSelection.opacity(0.75))
+                            }
+                        }
+                        .padding(8)
+                    }
+                    .frame(maxHeight: 360)
+                }
+            }
+            .frame(width: 520)
+            .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(style.border, lineWidth: 1))
+            .shadow(color: .black.opacity(0.28), radius: 28, y: 12)
+            .onAppear { fieldFocused = true }
         }
     }
 }

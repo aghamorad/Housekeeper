@@ -140,7 +140,7 @@ stage() {
   if [[ -n "$(/usr/bin/git -C "$ROOT_DIR" status --porcelain -- Housekeeping Runtime script)" ]]; then
     commit=""
   fi
-  source_digest="$(shasum -a 256 "${SOURCES[@]}" "$ROOT_DIR/Housekeeping/Info.plist" "$ROOT_DIR/script/render_app_icon.swift" "$ROOT_DIR/Housekeeping/Resources/BenignMonster/mascot.png" | shasum -a 256 | awk '{print $1}')"
+  source_digest="$(shasum -a 256 "${SOURCES[@]}" "$ROOT_DIR/Housekeeping/Info.plist" "$ROOT_DIR/Housekeeping/Resources/AppIcon.png" | shasum -a 256 | awk '{print $1}')"
   branch="$(/usr/bin/git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   built="$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"
   for pair in "HousekeepingSourceCommit:$commit" "HousekeepingSourceBaseCommit:$base_commit" "HousekeepingSourceDigest:$source_digest" "HousekeepingSourceBranch:$branch" "HousekeepingBuildDate:$built"; do
@@ -150,9 +150,9 @@ stage() {
     /usr/libexec/PlistBuddy -c "Delete :$key" "$plist" >/dev/null 2>&1 || true
     /usr/libexec/PlistBuddy -c "Add :$key string $value" "$plist"
   done
-  # Use the newly rendered exact mascot for packaged macOS releases. The
-  # legacy icon in the source project is retained for development Xcode builds.
+  # Use the definitive hardcoded AppIcon for packaged macOS releases.
   cp "$WORK_ROOT/generated-icon/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
+  cp "$ROOT_DIR/Housekeeping/Resources/AppIcon.png" "$app/Contents/Resources/AppIcon.png"
   ditto "$ROOT_DIR/Housekeeping/Resources/Rules" "$app/Contents/Resources/Rules"
   if [[ -d "$ROOT_DIR/Housekeeping/Resources/BenignMonster" ]]; then
     ditto "$ROOT_DIR/Housekeeping/Resources/BenignMonster" "$app/Contents/Resources/BenignMonster"
@@ -183,7 +183,7 @@ stage() {
   python3 "$ROOT_DIR/script/verify_universal_bundle.py" "$app"
 }
 
-echo "Rendering macOS icon from the checked-in octopus mascot..."
+echo "Building macOS AppIcon.icns from definitive Housekeeping/Resources/AppIcon.png..."
 bash "$ROOT_DIR/script/generate_app_icon.sh" "$WORK_ROOT/generated-icon"
 
 echo "Compiling for Apple silicon (arm64)..."

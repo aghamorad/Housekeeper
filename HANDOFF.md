@@ -1,3 +1,33 @@
+## 2026-11-23 — Housekeeper 0.31.0 (65): App Updater Fixes, Native Full Screen, Cartoon Cleaning Mascot, Navigation Moveset & Route Sweep Overhaul
+
+Universal bundle rebuilt (`./script/package_release.sh`), verified (`verify_release.py`), installed at `/Applications/Housekeeper.app`, and pushed to `origin/main` + tag `v0.31.0` on `aghamorad/Housekeeper`.
+
+What went into it:
+1. **Fixed App Updater Errors (`AppUpdateEngine.swift`, `UpdateView.swift`)**:
+   - Fixed the `"<App>.app" couldn't be copied to "Applications" because an item with the same name already exists` error on `.dmg`/`.zip` replacements (`MarkEdit.app`, `calibre.app`): `replaceBundle` now downloads/extracts in an isolated per-run workspace, stages incoming bundles onto local APFS via `/usr/bin/ditto` (never calling `FileManager.moveItem` directly from a read-only mounted `.dmg`), strips `com.apple.quarantine`, clears collisions cleanly, and rolls back safely via `~/.Trash` with `@MainActor` `NSAppleScript` admin escalation if `/Applications` requires privileges.
+   - Fixed Homebrew `sudo: a password is required` (`macfuse`) by running `brew` as the normal user with `SUDO_ASKPASS` pointing to a temporary `0700` `osascript` password prompt instead of running `brew` as `root`.
+   - Added `repairBrewLink` (`brew unlink` + `brew link` + Homebrew-prefix-scoped `--overwrite`) and multi-line error reporting for `brew link` step failures (`ca-certificates`).
+2. **Complete Native macOS Full Screen (`HousekeepingApp.swift`, `AppDelegate.swift`, `ContentView.swift`, `ReconcileView.swift`)**:
+   - Replaced `CommandGroup(replacing: .toolbar)` with `CommandGroup(after: .toolbar)` so Apple's native View → Enter Full Screen (`⌃⌘F`) menu item stays intact.
+   - Attached `WindowFullScreenConfigurator` + `AppDelegate.configureMainWindow` setting `.resizable`, `.fullScreenPrimary`, and unbounded `maxSize`, and removed the `940` max-width lock in `ReconcileView.swift`.
+3. **Cartoon Animated Cleaning Mascot (`HousekeeperScanningBanner.swift`, `SweepView.swift`, `ContentView.swift`, `CleanerView.swift`, `OverviewView.swift`)**:
+   - Added `AnimatedCleaningMascotStage` (`CleaningActivityMode`: `.scanningFolders`, `.cleaningItems`, `.emptyingTrash`, `.checkingUpdates`, `.updatingApps`, `.maintenance`) with articulated sweeping tentacles, blinking eyes, feather duster/broom/spray bottle/magnifying glass/wrench props, and animated folders passing along a track.
+   - Wired across `HousekeeperScanningBanner`, `ScanningScreen`, `SweepWorkingScreen`, `CleanerView`, `UpdateView`, and interactive hover/tap in `OverviewView`; gated on `MotionBudget.shared.isTicking`, `onScreen`, `appActive`, and `!reduceMotion` (`0.0%` idle CPU).
+4. **Cohesive Navigation, Non-Intimidating Clean Up & Space Lens Subfolder Search (`AppState.swift`, `ContentView.swift`, `SpaceAnalyzer.swift`, `SpaceLensView.swift`, `CleanerView.swift`)**:
+   - Added `workspaceBackStack` / `workspaceForwardStack` (`⌘[` / `⌘]` / `⌘0`), top workspace navigation toolbar, and `Quick Jump…` (`⌘/`) command palette.
+   - Added clickable breadcrumbs, `Choose Folder…` (`NSOpenPanel`), `Go to Path`, and recursive `Include Subfolders` search (`SpaceAnalyzer.runRecursiveSearch` + Spotlight supplement) in Space Lens.
+   - Rebuilt `CleanerView` browsing controls into an un-squished two-row strip and made routine reversible Quarantine moves 1-click without requiring typed `"ok"`.
+5. **Route Sweep Overhaul (`RouteModels.swift`, `RoutesModel.swift`, `RoutesView.swift`)**:
+   - Expanded `RouteDepth` to 5 presets (`Super Quick`, `Quick`, `Standard`, `Thorough`, `Deep`) so quick sweeps take ~1–5 minutes instead of 90 minutes, and defaulted Simple mode to 3 fast starter countries (`Turkey`, `United Arab Emirates`, `Germany`).
+   - Preserved selections when switching between Simple and Advanced or between `One per city` and `Every datacenter`, added region filter pills (`Middle East`, `Europe`, `Americas`, `Asia-Pacific`), `1 / Country`, and a 3-level Country → City → Datacenter tree in Advanced mode.
+6. **Hardcoded Definitive App Icon (`AppIcon.png`, `AppIcon.icns`, `AppDelegate.swift`, `script/generate_app_icon.sh`, `.github/workflows/review-ux.yml`)**:
+   - Hardcoded the approved Liquid Glass octopus icon (`/Users/Morad/Desktop/6bc73989-4346-4b8d-bb5d-5f3b49745307.png`) as `Housekeeping/Resources/AppIcon.png` & `AppIcon.icns`, enforced `NSApp.applicationIconImage` on launch, and removed legacy icon scripts/assets (`badge.png`, `octopus_red.png`, `render_app_icon.swift`).
+7. **Verification**:
+   - `./script/typecheck.sh` (`-warnings-as-errors`) passed.
+   - `python3 script/audit_ui_controls.py` passed (`0` inert controls across 137 Swift files).
+   - `./script/test_safety.sh` passed (`381` assertions, including Space Lens breadcrumb & recursive search checks).
+   - `python3 script/test_background_mcp.py` passed (`85` assertions).
+
 ## 2026-11-21 — Housekeeper 0.30.2 (63): Space Lens Real App & Folder Sizing, Apps Tab, Large-File Fix & Safe Trash
 
 Universal bundle rebuilt (`./script/package_release.sh`), installed at `/Applications/Housekeeper.app`, and pushed to `origin/main` on `aghamorad/Housekeeper`.

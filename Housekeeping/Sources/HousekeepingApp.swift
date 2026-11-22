@@ -27,13 +27,31 @@ struct HousekeepingApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {}
 
-            // Left to itself the View menu is the stock single-window one and
-            // every item in it is greyed out: tab bar, tabs, full screen — none
-            // of which this window has. A menu of disabled items reads as a
-            // broken app; one item that closes whatever screen is open is the
-            // only thing here a reader would actually use. The tab items are
-            // removed at the source, in `AppDelegate`.
-            CommandGroup(replacing: .toolbar) {
+            // Keep macOS's native View -> Enter Full Screen command intact while
+            // adding workspace back/forward/close-screen navigation shortcuts.
+            CommandGroup(after: .toolbar) {
+                Button("Back") {
+                    appState.goBackWorkspace()
+                }
+                .keyboardShortcut("[", modifiers: .command)
+                .disabled(!appState.canGoBackWorkspace)
+
+                Button("Forward") {
+                    appState.goForwardWorkspace()
+                }
+                .keyboardShortcut("]", modifiers: .command)
+                .disabled(!appState.canGoForwardWorkspace)
+
+                Button("Dashboard") {
+                    appState.goHomeWorkspace()
+                }
+                .keyboardShortcut("0", modifiers: .command)
+
+                Button("Quick Jump…") {
+                    NotificationCenter.default.post(name: .housekeepingOpenQuickJump, object: nil)
+                }
+                .keyboardShortcut("/", modifiers: .command)
+
                 Button("Close This Screen") {
                     appState.screen = nil
                 }

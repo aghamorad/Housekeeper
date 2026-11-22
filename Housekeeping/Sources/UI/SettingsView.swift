@@ -176,12 +176,10 @@ struct SettingsView: View {
 
             Section("About") {
                 HStack(spacing: 14) {
-                    if let mascot = HousekeeperMascot.loadOriginalMascot() {
-                        Image(nsImage: mascot)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 50, height: 50)
-                    }
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 52, height: 52)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Housekeeper")
                             .font(.system(size: 16, weight: .bold))

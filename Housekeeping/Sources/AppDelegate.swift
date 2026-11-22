@@ -34,8 +34,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // The octopus belongs to the app, not to the window: it goes up here, at
         // launch, so it is in the menu bar whether or not a window is open — which
         // is the point of having it there at all.
+        enforceDefinitiveAppIcon()
         StatusItemController.shared.install()
         DockVisibility.applySavedPreference()
+    }
+
+    private func enforceDefinitiveAppIcon() {
+        if let icnsURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+           let img = NSImage(contentsOf: icnsURL) {
+            NSApp.applicationIconImage = img
+            return
+        }
+        if let pngURL = Bundle.main.url(forResource: "AppIcon", withExtension: "png"),
+           let img = NSImage(contentsOf: pngURL) {
+            NSApp.applicationIconImage = img
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -59,15 +72,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func disableMainWindowRestoration() {
         for window in NSApp.windows where window.level == .normal {
-            window.isRestorable = false
+            configureMainWindow(window)
         }
         NotificationCenter.default.addObserver(
             forName: NSWindow.didBecomeMainNotification,
             object: nil,
             queue: .main
-        ) { notification in
-            (notification.object as? NSWindow)?.isRestorable = false
+        ) { [weak self] notification in
+            guard let window = notification.object as? NSWindow else { return }
+            self?.configureMainWindow(window)
         }
+    }
+
+    private func configureMainWindow(_ window: NSWindow) {
+        window.isRestorable = false
+        guard window.styleMask.contains(.titled), window.level == .normal else { return }
+        // Settings windows stay compact; the primary workspace window supports full native macOS Full Screen.
+        let isSettings = window.identifier?.rawValue.localizedCaseInsensitiveContains("settings") == true
+            || window.title == "Settings"
+        guard !isSettings else { return }
+        window.styleMask.insert(.resizable)
+        window.collectionBehavior.remove(.fullScreenAuxiliary)
+        window.collectionBehavior.remove(.fullScreenNone)
+        window.collectionBehavior.insert(.fullScreenPrimary)
+        window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     }
 
     /// Lets the app be quit while one of its own sheets is open.

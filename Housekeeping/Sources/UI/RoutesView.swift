@@ -26,6 +26,7 @@ struct RoutesView: View {
     @State private var expandedCountries: Set<String> = []
     @State private var showSelectedOnly = false
     @State private var simpleCountryFilter = ""
+    @State private var showAllSimpleCountries = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,7 +44,7 @@ struct RoutesView: View {
 
             HStack(spacing: 0) {
                 settingsColumn
-                    .frame(width: 376)
+                    .frame(width: 404)
                 Divider()
                 resultsColumn
                     .frame(maxWidth: .infinity)
@@ -339,32 +340,52 @@ struct RoutesView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 StepBadge(number: 2, title: "Where should your traffic come out?")
+                Spacer()
                 Text(model.simpleCountries.isEmpty ? "none picked" : "\(model.simpleCountries.count) picked")
                     .font(style.smallFont)
-                    .foregroundColor(style.secondaryText)
+                    .foregroundColor(model.simpleCountries.isEmpty ? style.caution : style.accent)
             }
-            Text("Pick as many countries as you like. A country with more than one server is tried at more than one of them.")
-                .font(style.smallFont)
-                .foregroundColor(style.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 6) {
-                ThemeButton(title: "Nearby", help: "The countries closest to you.") {
+                ThemeButton(title: "Top 3 Nearby", help: "Fastest starting set: Turkey, UAE, and Germany.") {
+                    model.simpleCountries = Set(["Turkey", "United Arab Emirates", "Germany"].filter(Set(model.countries).contains))
+                }
+                ThemeButton(title: "Nearby (5)", help: "Add nearby countries around the region.") {
                     pick(simpleNearby)
                 }
-                ThemeButton(title: "Popular", help: "The countries most often used.") {
+                ThemeButton(title: "Popular", help: "Add major European and North American hubs.") {
                     pick(simplePopular)
                 }
-                ThemeButton(title: "Clear", isEnabled: !model.simpleCountries.isEmpty, help: "Choose none.") {
+                ThemeButton(title: "Clear", isEnabled: !model.simpleCountries.isEmpty, help: "Clear picked countries.") {
                     model.simpleCountries.removeAll()
                 }
             }
 
             if !model.simpleCountries.isEmpty {
-                Text(model.simpleCountries.sorted().joined(separator: ", "))
-                    .font(style.smallFont)
-                    .foregroundColor(style.accent)
-                    .fixedSize(horizontal: false, vertical: true)
+                FlowRow(spacing: 5, lineSpacing: 5) {
+                    ForEach(model.simpleCountries.sorted(), id: \.self) { name in
+                        let flag = countryChipItems.first(where: { $0.name == name })?.flag
+                        Button {
+                            toggleSimpleCountry(name)
+                        } label: {
+                            HStack(spacing: 4) {
+                                if let flag { Text(flag).font(.system(size: 11)) }
+                                Text(name)
+                                    .font(.system(size: 11, weight: .semibold))
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 8.5, weight: .bold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(style.accent.opacity(0.14), in: Capsule())
+                            .overlay(Capsule().stroke(style.accent.opacity(0.35), lineWidth: 0.75))
+                            .foregroundStyle(style.text)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Remove \(name)")
+                    }
+                }
             }
 
             if countryChipItems.isEmpty {
@@ -373,28 +394,70 @@ struct RoutesView: View {
                     .foregroundColor(style.secondaryText)
             } else {
                 simpleCountrySearchField
-                FlowRow(spacing: 6, lineSpacing: 6) {
-                    ForEach(filteredSimpleCountryChips) { item in
-                        CountryChip(name: item.name, flag: item.flag, isSelected: model.simpleCountries.contains(item.name)) {
-                            toggleSimpleCountry(item.name)
+
+                if showAllSimpleCountries || !simpleCountryFilter.trimmingCharacters(in: .whitespaces).isEmpty {
+                    FlowRow(spacing: 6, lineSpacing: 6) {
+                        ForEach(filteredSimpleCountryChips) { item in
+                            CountryChip(name: item.name, flag: item.flag, isSelected: model.simpleCountries.contains(item.name)) {
+                                toggleSimpleCountry(item.name)
+                            }
                         }
                     }
                 }
+
+                Button {
+                    showAllSimpleCountries.toggle()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: showAllSimpleCountries ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text(showAllSimpleCountries ? "Hide full country list" : "Browse all \(countryChipItems.count) countries…")
+                            .font(style.smallFont)
+                    }
+                    .foregroundColor(style.accent)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
 
     private var simpleStepTwo: some View {
         VStack(alignment: .leading, spacing: 8) {
-            StepBadge(number: 3, title: "How hard should it look?")
-            Picker("", selection: $model.simpleDepth) {
+            StepBadge(number: 3, title: "How fast do you want results?")
+            VStack(spacing: 5) {
                 ForEach(RouteDepth.allCases) { depth in
-                    Text(depth.title).tag(depth)
+                    let isSelected = model.simpleDepth == depth
+                    Button {
+                        model.simpleDepth = depth
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
+                                .font(.system(size: 13))
+                                .foregroundColor(isSelected ? style.accent : style.secondaryText)
+                            Text(depth.title)
+                                .font(.system(size: 12.5, weight: isSelected ? .semibold : .medium))
+                                .foregroundColor(style.text)
+                            Spacer()
+                            Text(depth.shortHint)
+                                .font(.system(size: 11))
+                                .foregroundColor(isSelected ? style.accent : style.secondaryText)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(isSelected ? style.rowSelection : style.groupingBackground)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .strokeBorder(isSelected ? style.accent.opacity(0.6) : style.border, lineWidth: isSelected ? 1 : 0.5)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.engine.isRunning)
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .disabled(model.engine.isRunning)
             Text(model.simpleDepth.blurb)
                 .font(style.smallFont)
                 .foregroundColor(style.secondaryText)
@@ -405,15 +468,21 @@ struct RoutesView: View {
     private var stickyRunBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Text(model.uiMode == .simple ? targetCountWording : "\(model.targets.count) route\(model.targets.count == 1 ? "" : "s")")
+                Text(model.uiMode == .simple ? targetCountWording : routeBreakdownWording)
                     .font(style.labelFont)
                     .foregroundColor(style.text)
                 Spacer()
                 if !model.targets.isEmpty {
                     Text(estimate(model.estimatedSeconds))
                         .font(style.smallFont)
-                        .foregroundColor(style.secondaryText)
+                        .foregroundColor(model.estimatedSeconds > 1200 ? style.caution : style.secondaryText)
                 }
+            }
+            if model.estimatedSeconds > 1200 && !model.targets.isEmpty {
+                Text("Long sweep (\(estimate(model.estimatedSeconds))). Switch to Super Quick / Quick or pick fewer locations for faster results.")
+                    .font(.system(size: 11))
+                    .foregroundColor(style.caution)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             keepLogQuestion
             if model.engine.isRunning {
@@ -432,6 +501,14 @@ struct RoutesView: View {
                 }
             }
         }
+    }
+
+    private var routeBreakdownWording: String {
+        let locCount = model.selectedRows.count
+        let protoCount = model.selectedProtocols.count
+        let total = model.targets.count
+        if total == 0 { return "0 routes" }
+        return "\(total) route\(total == 1 ? "" : "s") (\(locCount) loc × \(protoCount) proto)"
     }
 
     // MARK: Advanced settings
@@ -520,22 +597,61 @@ struct RoutesView: View {
                 .labelsHidden()
                 .disabled(model.engine.isRunning)
 
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 5) {
+                        ForEach(VPNRegion.filterTabs) { region in
+                            let active = model.selectedRegion == region
+                            Button {
+                                model.selectedRegion = region
+                            } label: {
+                                Text(region.rawValue)
+                                    .font(.system(size: 11, weight: active ? .semibold : .medium))
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 4)
+                                    .background(active ? style.accent.opacity(0.16) : style.groupingBackground, in: Capsule())
+                                    .overlay(Capsule().strokeBorder(active ? style.accent.opacity(0.45) : style.border, lineWidth: 0.5))
+                                    .foregroundColor(active ? style.accent : style.secondaryText)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
                 searchField
 
                 HStack(spacing: 6) {
                     ThemeButton(title: "All", isEnabled: !model.rows.isEmpty, help: "Select every location currently shown.") {
                         model.selectAllVisible()
                     }
-                    ThemeButton(title: "Picked", isEnabled: !model.simpleCountries.isEmpty, help: "Select every location in the countries picked in Simple mode.") {
-                        for country in model.simpleCountries { model.select(country: country) }
+                    ThemeButton(title: "1 / Country", isEnabled: !model.rows.isEmpty, help: "Select one representative server per visible country.") {
+                        model.selectOnePerVisibleCountry()
                     }
-                    ThemeButton(title: showSelectedOnly ? "Showing Selected" : "Selected Only", isEnabled: !model.selectedKeys.isEmpty || showSelectedOnly, help: "Filter the list to only the locations you have selected.") {
+                    ThemeButton(title: showSelectedOnly ? "Showing Picked" : "Selected Only", isEnabled: !model.selectedKeys.isEmpty || showSelectedOnly, help: "Filter the list to only the locations you have selected.") {
                         showSelectedOnly.toggle()
                     }
                     ThemeButton(title: "Clear", isEnabled: !model.selectedKeys.isEmpty, help: "Clear all selected locations.") {
                         model.clearSelection()
                         showSelectedOnly = false
                     }
+                }
+
+                HStack(spacing: 8) {
+                    Button(expandedCountries.isEmpty ? "Expand All" : "Collapse All") {
+                        if expandedCountries.isEmpty {
+                            expandedCountries = Set(groupedLocationSections.map(\.country))
+                        } else {
+                            expandedCountries.removeAll()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(style.accent)
+
+                    Spacer()
+
+                    Text("\(model.selectedKeys.count) selected")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(style.secondaryText)
                 }
             }
             .padding(.horizontal, 14)
@@ -617,21 +733,94 @@ struct RoutesView: View {
             .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(selectedInCountry > 0 ? style.accent.opacity(0.35) : style.border, lineWidth: 0.5))
 
             if isExpanded {
-                VStack(alignment: .leading, spacing: 1) {
-                    ForEach(section.rows) { row in
-                        LocationRowView(
-                            row: row,
-                            isSelected: model.selectedKeys.contains(row.id),
-                            granularity: model.granularity
-                        ) {
-                            toggleKey(row.id)
+                if model.granularity == .datacenter {
+                    let cityGroups = groupedCities(in: section.rows)
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(cityGroups) { cityGroup in
+                            citySubgroupRow(cityGroup)
                         }
                     }
+                    .padding(.leading, 16)
+                    .padding(.top, 2)
+                    .padding(.bottom, 4)
+                } else {
+                    VStack(alignment: .leading, spacing: 1) {
+                        ForEach(section.rows) { row in
+                            LocationRowView(
+                                row: row,
+                                isSelected: model.selectedKeys.contains(row.id),
+                                granularity: model.granularity
+                            ) {
+                                toggleKey(row.id)
+                            }
+                        }
+                    }
+                    .padding(.leading, 18)
+                    .padding(.top, 2)
+                    .padding(.bottom, 4)
                 }
-                .padding(.leading, 18)
-                .padding(.top, 2)
-                .padding(.bottom, 4)
             }
+        }
+    }
+
+    private func citySubgroupRow(_ cityGroup: CityLocationGroup) -> some View {
+        let ids = Set(cityGroup.rows.map(\.id))
+        let selectedInCity = ids.intersection(model.selectedKeys).count
+        let allSelected = !ids.isEmpty && selectedInCity == ids.count
+
+        return VStack(alignment: .leading, spacing: 1) {
+            if cityGroup.rows.count > 1 {
+                HStack(spacing: 6) {
+                    Button {
+                        if allSelected {
+                            model.selectedKeys.subtract(ids)
+                        } else {
+                            model.selectedKeys.formUnion(ids)
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: allSelected ? "checkmark.square.fill" : (selectedInCity > 0 ? "minus.square.fill" : "square"))
+                                .font(.system(size: 11.5))
+                                .foregroundColor(selectedInCity > 0 ? style.accent : style.secondaryText)
+                            Text(cityGroup.city)
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundColor(style.text)
+                            Spacer()
+                            Text("\(cityGroup.rows.count) datacenters")
+                                .font(.system(size: 10))
+                                .foregroundColor(style.secondaryText)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.vertical, 3)
+                .padding(.horizontal, 6)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                ForEach(cityGroup.rows) { row in
+                    LocationRowView(
+                        row: row,
+                        isSelected: model.selectedKeys.contains(row.id),
+                        granularity: model.granularity
+                    ) {
+                        toggleKey(row.id)
+                    }
+                }
+            }
+            .padding(.leading, cityGroup.rows.count > 1 ? 14 : 0)
+        }
+    }
+
+    private func groupedCities(in rows: [LocationRow]) -> [CityLocationGroup] {
+        var byCity: [String: [LocationRow]] = [:]
+        for row in rows {
+            let cityName = row.representative.city.isEmpty ? row.country : row.representative.city
+            byCity[cityName, default: []].append(row)
+        }
+        return byCity.keys.sorted().map { city in
+            CityLocationGroup(city: city, rows: byCity[city] ?? [])
         }
     }
 
@@ -1433,6 +1622,12 @@ private struct CountryLocationGroup: Identifiable {
     let flag: String?
     let rows: [LocationRow]
     var id: String { country }
+}
+
+private struct CityLocationGroup: Identifiable {
+    let city: String
+    let rows: [LocationRow]
+    var id: String { city }
 }
 
 /// A country as the simple view offers it — a name and, when the client gives a

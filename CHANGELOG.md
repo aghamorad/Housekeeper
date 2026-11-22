@@ -1,3 +1,24 @@
+## 0.31.0 — App Updater Fixes, Native Full Screen, Cartoon Cleaning Mascot, Navigation Moveset & Route Sweep Overhaul
+
+- **Fixed App Updater Bundle Replacement & Homebrew Sudo/Link Failures (`AppUpdateEngine.swift`, `UpdateView.swift`)**:
+  - Eliminated the `"<App>.app" couldn't be copied to "Applications" because an item with the same name already exists` error when replacing `.dmg`/`.zip` apps like MarkEdit and calibre: `replaceBundle` now uses an isolated per-run workspace, stages incoming bundles onto local APFS via `ditto` before touching `/Applications`, strips `com.apple.quarantine`, clears collisions cleanly, and performs safe Trash backup/rollback with administrator fallback if needed.
+  - Replaced root `brew` execution (which Homebrew rejects) with `SUDO_ASKPASS` invoking a native macOS password dialog so privileged casks like `macfuse` upgrade cleanly.
+  - Added safe `brew link` conflict recovery (`brew unlink && brew link`, plus prefix-scoped `--overwrite` when dry-run targets live strictly inside Homebrew's prefix) and clearer multi-line error summaries for formulas like `ca-certificates`.
+- **Complete Native macOS Full Screen (`HousekeepingApp.swift`, `AppDelegate.swift`, `ContentView.swift`, `ReconcileView.swift`)**:
+  - Restored macOS's native View → Enter Full Screen (`⌃⌘F`) command, attached `.fullScreenPrimary` + unbounded `maxSize` window configuration, and removed fixed width caps so the green button enters genuine macOS Full Screen instead of merely maximizing.
+- **Cartoon Animated Cleaning Mascot (`HousekeeperScanningBanner.swift`, `SweepView.swift`, `ContentView.swift`, `CleanerView.swift`, `OverviewView.swift`)**:
+  - Built `AnimatedCleaningMascotStage`: the Housekeeper octopus waves her articulated tentacles, blinks, and sweeps across animated macOS folders with a feather duster, broom, yellow spray bottle, magnifying glass, or wrench depending on whether she is scanning folders, sweeping into Quarantine, emptying Trash, or updating apps — while staying at `0.0%` CPU when idle, hidden, or Reduce Motion is on.
+- **Cohesive Navigation & Non-Intimidating Moveset (`AppState.swift`, `ContentView.swift`, `SpaceAnalyzer.swift`, `SpaceLensView.swift`, `CleanerView.swift`)**:
+  - Added workspace Back (`⌘[`) / Forward (`⌘]`) / Home (`⌘0`) navigation history, a top breadcrumb toolbar, and a `Quick Jump…` (`⌘/`) command palette across all 20+ tools.
+  - Upgraded Space Lens Folder Explorer with clickable breadcrumbs, `Choose Folder…` (`NSOpenPanel`), `Go to Path`, and real recursive `Include Subfolders` search.
+  - Streamlined Clean Up browsing controls into an un-squished two-row toolbar and made routine reversible Quarantine moves 1-click without forcing typed confirmation.
+- **Route Sweep Speed Presets & Non-Destructive Location Selection (`RouteModels.swift`, `RoutesModel.swift`, `RoutesView.swift`)**:
+  - Expanded `RouteDepth` to 5 clear presets (**Super Quick**, **Quick**, **Standard**, **Thorough**, **Deep**), defaulting Simple mode to 3 fast starter countries (~45 sec – 2 min) and capping **Super Quick** to 1 server per picked country.
+  - Preserved selections when switching between Simple and Advanced or between `One per city` and `Every datacenter`, added region filter tabs (`Middle East`, `Europe`, `Americas`, `Asia-Pacific`), `1 / Country`, and a Country → City → Datacenter tree in Advanced mode.
+- **Definitive App Icon Hardcoded (`AppIcon.png`, `AppIcon.icns`, `AppDelegate.swift`, `review-ux.yml`)**:
+  - Hardcoded the approved Liquid Glass octopus icon across `AppIcon.png`, `AppIcon.icns`, `AppDelegate`, Settings About, and release/CI scripts, with legacy icon scripts removed.
+- Version 0.31.0 (65).
+
 ## 0.29.1 — Route Sweeper: Restore Windscribe & Add Surfshark & ExpressVPN Tri-Provider Support
 
 - **Fixed Windscribe Detection**: Corrected field key parsing in `WindscribeProvider` (`login`, `connection`, `ip`, `internet`) so the client accurately reflects "Logged in" / "Ready" status and active public IP instead of falsely showing "signed out".

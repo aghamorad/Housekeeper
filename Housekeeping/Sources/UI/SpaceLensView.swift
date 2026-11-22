@@ -19,6 +19,9 @@ struct SpaceLensView: View {
     @State private var appSort: ArrangeOption = .largest
     @State private var folderSort: ArrangeOption = .largest
     @State private var itemPendingTrash: StorageItem? = nil
+    @State private var searchSubfolders: Bool = false
+    @State private var showPathEditor: Bool = false
+    @State private var customPathInput: String = ""
 
     private enum CategorySort: String, CaseIterable, Identifiable {
         case largest = "Size (Largest)"
@@ -142,10 +145,50 @@ struct SpaceLensView: View {
 
     private var filteredFolderItems: [StorageItem] {
         let query = searchFilter.trimmingCharacters(in: .whitespacesAndNewlines)
+        if activeTab == .explorer && searchSubfolders && !query.isEmpty {
+            return sortItems(analyzer.subfolderSearchResults, by: folderSort)
+        }
         let base = query.isEmpty
             ? analyzer.currentFolderItems
             : analyzer.currentFolderItems.filter { $0.name.localizedCaseInsensitiveContains(query) }
         return sortItems(base, by: folderSort)
+    }
+
+    private func triggerFolderSearchIfNeeded() {
+        guard activeTab == .explorer else { return }
+        let q = searchFilter.trimmingCharacters(in: .whitespacesAndNewlines)
+        if searchSubfolders && !q.isEmpty {
+            analyzer.searchSubfolders(rootPath: analyzer.currentFolderPath, query: q)
+        } else {
+            analyzer.clearSubfolderSearch()
+        }
+    }
+
+    private func chooseCustomFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Explore Folder"
+        panel.directoryURL = URL(fileURLWithPath: analyzer.currentFolderPath)
+        if panel.runModal() == .OK, let url = panel.url {
+            searchFilter = ""
+            analyzer.clearSubfolderSearch()
+            analyzer.navigateTo(path: url.path)
+        }
+    }
+
+    private func jumpToTypedPath() {
+        let expanded = (customPathInput.trimmingCharacters(in: .whitespacesAndNewlines) as NSString).expandingTildeInPath
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir), isDir.boolValue {
+            showPathEditor = false
+            searchFilter = ""
+            analyzer.clearSubfolderSearch()
+            analyzer.navigateTo(path: expanded)
+        } else {
+            analyzer.trashError = "Folder not found: \(customPathInput)"
+        }
     }
 
     var body: some View {
@@ -171,11 +214,21 @@ struct SpaceLensView: View {
                     folderExplorerSection
                 }
             }
-            .padding(32)
-            .frame(maxWidth: 1080, alignment: .leading)
+            .padding(28)
+            .frame(maxWidth: 1200, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background { HousekeepingBackdrop(style: style) }
+        .onChange(of: searchFilter) { _ in
+            triggerFolderSearchIfNeeded()
+        }
+        .onChange(of: searchSubfolders) { _ in
+            triggerFolderSearchIfNeeded()
+        }
+        .onChange(of: analyzer.currentFolderPath) { _ in
+            triggerFolderSearchIfNeeded()
+        }
         .onAppear {
             analyzer.refreshVolumeInfo()
             if analyzer.categories.isEmpty {
@@ -454,25 +507,45 @@ struct SpaceLensView: View {
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 12)
             } else {
-                VStack(spacing: 6) {
+                VStack(spacing: 4) {
                     ForEach(items) { item in
-                        HStack(spacing: 10) {
-                            Image(nsImage: iconForItem(item))
-                                .resizable()
-                                .frame(width: 20, height: 20)
-                            Text(item.name)
-                                .font(.system(size: 12, weight: .medium))
-                                .lineLimit(1)
-                            Spacer()
-                            if item.isMeasuring {
-                                ProgressView().controlSize(.mini)
+                        Button {
+                            if item.url.pathExtension.lowercased() == "app" {
+                                activeTab = .apps
+                                searchFilter = item.name
                             } else {
-                                Text(item.humanSize)
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .monospacedDigit()
-                                    .foregroundStyle(.secondary)
+                                activeTab = .explorer
+                                searchFilter = ""
+                                analyzer.navigateTo(path: item.url.deletingLastPathComponent().path)
                             }
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(nsImage: iconForItem(item))
+                                    .resizable()
+                                    .frame(width: 20, height: 20)
+                                Text(item.name)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(style.text)
+                                    .lineLimit(1)
+                                Spacer()
+                                if item.isMeasuring {
+                                    ProgressView().controlSize(.mini)
+                                } else {
+                                    Text(item.humanSize)
+                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                        .monospacedDigit()
+                                        .foregroundStyle(.secondary)
+                                }
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .hoverHighlight(cornerRadius: 6, hovered: style.rowSelection.opacity(0.5))
                     }
                 }
             }
@@ -696,112 +769,190 @@ struct SpaceLensView: View {
     private var folderExplorerSection: some View {
         let items = filteredFolderItems
         let maxFolderBytes = max(1, items.map(\.size).max() ?? 1)
+        let showingSubfolderMatches = searchSubfolders && !searchFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
-        return VStack(alignment: .leading, spacing: 14) {
-            // Navigation Breadcrumbs & Controls
-            HStack(spacing: 8) {
-                ThemeButton(
-                    title: "Back",
-                    systemImage: "chevron.left",
-                    isEnabled: !analyzer.navigationHistory.isEmpty
-                ) {
-                    analyzer.goBack()
+        return VStack(alignment: .leading, spacing: 12) {
+            // Navigation Controls + Clickable Breadcrumbs + Custom Folder Picker
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    ThemeButton(
+                        title: "Back",
+                        systemImage: "chevron.left",
+                        isEnabled: !analyzer.navigationHistory.isEmpty
+                    ) {
+                        analyzer.goBack()
+                    }
+
+                    ThemeButton(
+                        title: "Forward",
+                        systemImage: "chevron.right",
+                        isEnabled: !analyzer.forwardHistory.isEmpty
+                    ) {
+                        analyzer.goForward()
+                    }
+
+                    ThemeButton(
+                        title: "Up",
+                        systemImage: "arrow.up",
+                        isEnabled: analyzer.currentFolderPath != "/"
+                    ) {
+                        analyzer.goUp()
+                    }
+
+                    ThemeButton(
+                        title: "Choose Folder…",
+                        systemImage: "folder.badge.plus",
+                        help: "Pick any folder or external drive to inspect."
+                    ) {
+                        chooseCustomFolder()
+                    }
+
+                    ThemeButton(
+                        title: showPathEditor ? "Cancel Path" : "Go to Path",
+                        systemImage: "arrow.turn.down.right",
+                        help: "Type or paste a folder path directly."
+                    ) {
+                        customPathInput = analyzer.currentFolderPath
+                        showPathEditor.toggle()
+                    }
+
+                    Spacer()
+
+                    if analyzer.isSearchingSubfolders {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.mini)
+                            Text("Searching subfolders…")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if let prog = analyzer.folderMeasureProgress {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.mini)
+                            Text(prog)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    ThemeButton(
+                        title: "Refresh",
+                        systemImage: "arrow.clockwise",
+                        help: "Recalculate sizes in this folder"
+                    ) {
+                        analyzer.loadFolder(path: analyzer.currentFolderPath, forceRefresh: true)
+                    }
+
+                    ThemeButton(
+                        title: "Finder",
+                        systemImage: "macwindow"
+                    ) {
+                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: analyzer.currentFolderPath)])
+                    }
                 }
 
-                ThemeButton(
-                    title: "Forward",
-                    systemImage: "chevron.right",
-                    isEnabled: !analyzer.forwardHistory.isEmpty
-                ) {
-                    analyzer.goForward()
+                // Clickable breadcrumb bar
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(Array(analyzer.breadcrumbs.enumerated()), id: \.element.id) { idx, crumb in
+                            if idx > 0 {
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            let isCurrent = crumb.path == analyzer.currentFolderPath
+                            Button {
+                                analyzer.navigateTo(path: crumb.path)
+                            } label: {
+                                Text(crumb.title)
+                                    .font(.system(size: 11.5, weight: isCurrent ? .semibold : .medium))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(isCurrent ? style.accent.opacity(0.14) : Color.primary.opacity(0.05), in: Capsule())
+                                    .foregroundStyle(isCurrent ? style.accent : style.text)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
 
-                ThemeButton(
-                    title: "Up",
-                    systemImage: "arrow.up",
-                    isEnabled: analyzer.currentFolderPath != "/"
-                ) {
-                    analyzer.goUp()
+                if showPathEditor {
+                    HStack(spacing: 8) {
+                        TextField("Enter folder path (e.g. ~/Downloads or /Volumes/HDD-C3PO)…", text: $customPathInput)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12, design: .monospaced))
+                            .onSubmit { jumpToTypedPath() }
+                        ThemeButton(title: "Open", isPrimary: true) {
+                            jumpToTypedPath()
+                        }
+                    }
                 }
 
-                Text(analyzer.currentFolderPath)
-                    .font(.system(size: 12, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                // Quick Location Chips + Search Mode + Hidden + Arrange
+                HStack(spacing: 8) {
+                    let home = FileManager.default.homeDirectoryForCurrentUser
+                    locationChip("Home", path: home.path)
+                    locationChip("Applications", path: "/Applications")
+                    locationChip("Downloads", path: home.appendingPathComponent("Downloads").path)
+                    locationChip("Caches", path: home.appendingPathComponent("Library/Caches").path)
+                    locationChip("Documents", path: home.appendingPathComponent("Documents").path)
+                    locationChip("C3PO", path: home.appendingPathComponent("C3PO").path)
+                    locationChip("Trash", path: home.appendingPathComponent(".Trash").path)
+
+                    Spacer()
+                }
+
+                HStack(spacing: 10) {
+                    searchBar(placeholder: searchSubfolders ? "Search inside all subfolders…" : "Filter this folder…")
+
+                    Toggle("Include Subfolders", isOn: $searchSubfolders)
+                        .toggleStyle(.checkbox)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .help("Search recursively inside all subfolders under the current path.")
+
+                    Toggle("Hidden", isOn: Binding(
+                        get: { analyzer.showHiddenFiles },
+                        set: { newVal in
+                            analyzer.showHiddenFiles = newVal
+                            analyzer.loadFolder(path: analyzer.currentFolderPath)
+                            triggerFolderSearchIfNeeded()
+                        }
+                    ))
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 11.5))
+
+                    Spacer()
+
+                    arrangePicker(selection: $folderSort)
+                }
+            }
+            .padding(12)
+            .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(style.border, lineWidth: 1))
+
+            if showingSubfolderMatches {
+                Text("\(items.count) match\(items.count == 1 ? "" : "es") inside \(analyzer.currentFolderPath)")
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-
-                Spacer()
-
-                if let prog = analyzer.folderMeasureProgress {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.mini)
-                        Text(prog)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                ThemeButton(
-                    title: "Refresh",
-                    systemImage: "arrow.clockwise",
-                    help: "Recalculate sizes in this folder"
-                ) {
-                    analyzer.loadFolder(path: analyzer.currentFolderPath, forceRefresh: true)
-                }
-
-                ThemeButton(
-                    title: "Finder",
-                    systemImage: "macwindow"
-                ) {
-                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: analyzer.currentFolderPath)])
-                }
-            }
-
-            // Quick Location Chips + Search + Hidden Toggle
-            HStack(spacing: 8) {
-                let home = FileManager.default.homeDirectoryForCurrentUser
-                locationChip("Home", path: home.path)
-                locationChip("Applications", path: "/Applications")
-                locationChip("Downloads", path: home.appendingPathComponent("Downloads").path)
-                locationChip("Caches", path: home.appendingPathComponent("Library/Caches").path)
-                locationChip("Documents", path: home.appendingPathComponent("Documents").path)
-                locationChip("C3PO", path: home.appendingPathComponent("C3PO").path)
-                locationChip("Trash", path: home.appendingPathComponent(".Trash").path)
-
-                Spacer()
-
-                Toggle("Hidden", isOn: Binding(
-                    get: { analyzer.showHiddenFiles },
-                    set: { newVal in
-                        analyzer.showHiddenFiles = newVal
-                        analyzer.loadFolder(path: analyzer.currentFolderPath)
-                    }
-                ))
-                .toggleStyle(.checkbox)
-                .font(.system(size: 11))
-
-                arrangePicker(selection: $folderSort)
-
-                searchBar(placeholder: "Filter folder…")
-            }
-
-            if analyzer.currentFolderTotalBytes > 0 {
+            } else if analyzer.currentFolderTotalBytes > 0 {
                 Text("Measured total in this folder: \(humanSize(analyzer.currentFolderTotalBytes)) (\(items.count) items)")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
 
             // Items List
-            if items.isEmpty {
+            if items.isEmpty && !analyzer.isSearchingSubfolders {
                 emptyStateCard(
-                    icon: "folder",
-                    text: searchFilter.isEmpty ? "Folder is empty." : "No items match \"\(searchFilter)\"."
+                    icon: showingSubfolderMatches ? "magnifyingglass" : "folder",
+                    text: searchFilter.isEmpty
+                        ? "Folder is empty."
+                        : (showingSubfolderMatches
+                            ? "No files or folders matching \"\(searchFilter)\" inside subfolders."
+                            : "No items in this folder match \"\(searchFilter)\". Turn on \"Include Subfolders\" to search deeper.")
                 )
             } else {
                 VStack(spacing: 1) {
                     ForEach(items) { item in
-                        storageItemRow(item, maxReferenceBytes: maxFolderBytes, showParentPath: false)
+                        storageItemRow(item, maxReferenceBytes: maxFolderBytes, showParentPath: showingSubfolderMatches)
                     }
                 }
                 .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 12))
@@ -942,6 +1093,8 @@ struct SpaceLensView: View {
 
                 if item.isDirectory {
                     Button {
+                        searchFilter = ""
+                        analyzer.clearSubfolderSearch()
                         analyzer.navigateInto(item)
                     } label: {
                         Image(systemName: "chevron.right")
@@ -957,9 +1110,16 @@ struct SpaceLensView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .contentShape(Rectangle())
+        .hoverHighlight(cornerRadius: 8, hovered: style.rowSelection.opacity(0.45))
         .onTapGesture {
             if item.isDirectory {
+                searchFilter = ""
+                analyzer.clearSubfolderSearch()
                 analyzer.navigateInto(item)
+            } else if showParentPath {
+                searchFilter = ""
+                analyzer.clearSubfolderSearch()
+                analyzer.navigateTo(path: item.url.deletingLastPathComponent().path)
             }
         }
         .contextMenu {

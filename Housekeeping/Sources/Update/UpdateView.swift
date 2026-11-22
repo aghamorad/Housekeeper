@@ -547,6 +547,7 @@ struct UpdateView: View {
             currentItem: appState.updateRunCurrent.map { "Installing \($0)…" } ?? "Applying package updates…",
             stepCount: "\(appState.updateRunDone) of \(appState.updateRunTotal)",
             progressFraction: Double(appState.updateRunDone) / Double(max(appState.updateRunTotal, 1)),
+            mode: .updatingApps,
             onStop: { appState.cancelUpdateWork() }
         )
         .padding(.vertical, 4)
@@ -559,29 +560,46 @@ struct UpdateView: View {
             currentItem: appState.updateReadDone > 0 ? "Checking package \(appState.updateReadDone) of \(appState.updateReadTotal)" : "Querying package repositories…",
             stepCount: appState.updateReadTotal > 0 ? "\(appState.updateReadDone)/\(appState.updateReadTotal)" : nil,
             progressFraction: appState.updateReadTotal > 0 ? Double(appState.updateReadDone) / Double(appState.updateReadTotal) : nil,
+            mode: .checkingUpdates,
             onStop: { appState.cancelUpdateWork() }
         )
         .padding(.vertical, 4)
     }
 
     private var outcomesPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Update Results")
-                .font(.system(size: 13, weight: .bold))
-            ForEach(appState.updateOutcomes) { outcome in
-                HStack(spacing: 8) {
-                    Image(systemName: outcome.succeeded ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .foregroundStyle(outcome.succeeded ? .green : .orange)
-                    Text(outcome.name)
-                        .font(.system(size: 12, weight: .bold))
-                    Text(outcome.message)
-                        .font(.system(size: 12))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Update Results")
+                    .font(.system(size: 13, weight: .bold))
+                Spacer()
+                if let summary = appState.updateSummaryLine {
+                    Text(summary)
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
+            }
+            ForEach(appState.updateOutcomes) { outcome in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: outcome.succeeded ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(outcome.succeeded ? .green : .orange)
+                        .padding(.top, 1)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(outcome.name)
+                            .font(.system(size: 12.5, weight: .bold))
+                        Text(outcome.message)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 2)
             }
         }
         .padding(16)
         .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(style.border, lineWidth: 1))
     }
 
     private var emptyState: some View {
