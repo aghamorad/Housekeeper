@@ -12,6 +12,10 @@ struct BackgroundActivityView: View {
     @State private var filter = Filter.thirdParty
     @State private var sort = Order.memory
     @State private var query = ""
+    @State private var selectedPaths: Set<String> = []
+    @State private var selectionAnchor: String?
+    @State private var stopping = false
+    @State private var stopNotice: String?
 
     private enum Section: String, CaseIterable, Identifiable {
         case recommendations = "Recommendations", running = "Running Now", startup = "Startup Files", registered = "Background Permissions"
@@ -97,6 +101,22 @@ struct BackgroundActivityView: View {
                     Text("Reading taken \(snapshot.captured.formatted(date: .omitted, time: .standard)). Refresh to see changes.")
                         .font(.system(size: 14)).foregroundStyle(.secondary)
                 }
+                if let stopNotice {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "info.circle.fill").foregroundStyle(.orange)
+                        Text(stopNotice).font(.system(size: 14))
+                        Spacer()
+                        Button {
+                            self.stopNotice = nil
+                        } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(12)
+                    .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                }
+                if !selectedPaths.isEmpty {
+                    selectionBar
+                }
                 ForEach(snapshot.notices, id: \.self) { Text($0).foregroundStyle(.orange) }
                 Picker("Review", selection: $section) {
                     ForEach(Section.allCases) { Text($0.rawValue).tag($0) }
@@ -133,6 +153,68 @@ struct BackgroundActivityView: View {
             LazyVStack(alignment: .leading, spacing: 14) {
                 ForEach(apps) { app in appRow(app) }
             }
+            .onChange(of: apps.map(\.path)) { _ in
+                // A refresh can drop rows; a selection must not point at things
+                // that are no longer on screen.
+                selectedPaths.formIntersection(Set(apps.map(\.path)))
+            }
+        }
+    }
+
+    /// Shift- and Command-click are the point of this bar: selecting twelve
+    /// helpers one checkbox at a time is why stopping background work used to
+    /// feel like a chore.
+    private var selectionBar: some View {
+        HStack(spacing: 12) {
+            Text("\(selectedPaths.count) selected")
+                .font(.system(size: 15, weight: .semibold))
+            Text("Shift-click for a range, Command-click to add or remove one.")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button("Clear") {
+                selectedPaths.removeAll()
+                selectionAnchor = nil
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+
+            Button(stopping ? "Stopping…" : "Stop Selected") {
+                stopSelected()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            .controlSize(.large)
+            .disabled(stopping)
+        }
+        .padding(12)
+        .background(Color.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.red.opacity(0.2), lineWidth: 1))
+    }
+
+    private func stopSelected() {
+        guard !stopping else { return }
+        let chosen = snapshot.apps.filter { selectedPaths.contains($0.path) }
+        let pids = chosen.flatMap(\.processes).map(\.pid)
+        guard !pids.isEmpty else {
+            stopNotice = "Nothing in the selection is running right now."
+            return
+        }
+        stopping = true
+        Task {
+            var failures: [String] = []
+            for pid in pids {
+                if let reason = await ProcessTerminator.terminate(pid: pid) {
+                    failures.append(reason)
+                }
+            }
+            stopping = false
+            selectedPaths.removeAll()
+            selectionAnchor = nil
+            stopNotice = failures.isEmpty
+                ? "Stopped \(pids.count) process\(pids.count == 1 ? "" : "es"). Anything that starts again was restarted by its own app or by macOS."
+                : "Stopped most of them. \(failures.count) could not be stopped: \(failures.prefix(3).joined(separator: " "))"
+            refresh()
         }
     }
 
@@ -170,7 +252,23 @@ struct BackgroundActivityView: View {
                     .buttonStyle(.bordered).controlSize(.large)
             }
         }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+            .background(
+                selectedPaths.contains(app.path) ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.04),
+                in: RoundedRectangle(cornerRadius: 12)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(selectedPaths.contains(app.path) ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 1.5)
+            )
+            .contentShape(Rectangle())
+            .onTapGesture {
+                RowSelection.apply(
+                    id: app.path,
+                    order: apps.map(\.path),
+                    selection: &selectedPaths,
+                    anchor: &selectionAnchor
+                )
+            }
             .contextMenu {
                 Button("Ask the Housekeeper") {
                     HousekeeperTopic.ask(HousekeeperTopic(id: "activity-" + app.id, title: app.name, label: "Background activity", tone: .plain,

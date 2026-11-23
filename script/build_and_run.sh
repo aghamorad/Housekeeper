@@ -42,7 +42,11 @@ if [[ -f "$BOOKBIND_SOURCE/app.py" && -f "$BOOKBIND_SOURCE/bookbind_cli.py" && -
     ditto "/Applications/Bookbind.app/Contents/Resources/bin" "$APP_BUNDLE/Contents/Resources/Bookbind/bin"
   fi
 fi
-/usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "Housekeeper Local Signing"; then
+  /usr/bin/codesign --force --deep --sign "Housekeeper Local Signing" "$APP_BUNDLE"
+else
+  /usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"
+fi
 /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
 
 open_app() {

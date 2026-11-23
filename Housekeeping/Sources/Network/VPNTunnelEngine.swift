@@ -556,8 +556,16 @@ public actor VPNTunnelEngine {
         )
     }
 
+    /// Removes a VPN profile from macOS.
+    ///
+    /// `networksetup -removenetworkservice` cannot remove a VPN service: a VPN is
+    /// always the only service on its own port, and the tool refuses on exactly
+    /// that condition. The installed helper edits the system network
+    /// configuration directly, after matching the name to a real VPN entry and
+    /// keeping a dated backup. Only when the helper is absent does this fall back
+    /// to the administrator prompt, which is the behaviour that made the old
+    /// button feel broken.
     public func deleteService(service: VPNTunnelService) async throws {
-        // Step 1: Disconnect and disable first
         _ = try? await runner.run(
             executable: "/usr/sbin/scutil",
             arguments: ["--nc", "stop", service.name],
@@ -569,34 +577,61 @@ public actor VPNTunnelEngine {
             timeout: 5
         )
 
-        // Step 2: Remove from macOS Network Preferences
+        // Try the helper first. A refusal (service not found in the plist) is a
+        // real answer and should be shown, not retried as a password prompt.
+        do {
+            let request = HelperRequest(command: .removeVPNService, name: service.name)
+            _ = try await PrivilegedHelper.shared.call(request)
+            return
+        } catch PrivilegedHelperError.notInstalled {
+            // Fall through to the old path below.
+        } catch {
+            // The helper answered and the answer was no. Try the ordinary tool
+            // once anyway: it is harmless, and it is the only path that also
+            // clears app-managed VPN configurations on some macOS versions.
+        }
+
         let directRes = try? await runner.run(
             executable: "/usr/sbin/networksetup",
             arguments: ["-removenetworkservice", service.name],
             timeout: 10
         )
+        guard directRes?.succeeded != true else { return }
 
-        // Step 3: If direct remove did not succeed (e.g. requires administrator privileges on macOS),
-        // execute through standard macOS AppleScript authorization dialog.
-        if directRes?.succeeded != true {
-            let escapedName = service.name.replacingOccurrences(of: "\"", with: "\\\"")
-            let scriptSource = "do shell script \"/usr/sbin/networksetup -removenetworkservice \\\"\(escapedName)\\\"\" with administrator privileges"
-            if let appleScript = NSAppleScript(source: scriptSource) {
-                var errorDict: NSDictionary?
-                appleScript.executeAndReturnError(&errorDict)
-                if let errorDict {
-                    let msg = errorDict[NSAppleScript.errorMessage] as? String ?? "Authorization failed"
-                    throw NSError(domain: "VPNTunnelEngine", code: 1, userInfo: [NSLocalizedDescriptionKey: msg])
-                }
+        let escapedName = service.name.replacingOccurrences(of: "\"", with: "\\\"")
+        let scriptSource = "do shell script \"/usr/sbin/networksetup -removenetworkservice \\\"\(escapedName)\\\"\" with administrator privileges"
+        if let appleScript = NSAppleScript(source: scriptSource) {
+            var errorDict: NSDictionary?
+            appleScript.executeAndReturnError(&errorDict)
+            if let errorDict {
+                let msg = errorDict[NSAppleScript.errorMessage] as? String ?? "Authorization failed"
+                throw NSError(
+                    domain: "VPNTunnelEngine",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: msg]
+                )
             }
         }
     }
 
+    /// Stops one VPN engine. Root-owned helpers cannot be signalled by an
+    /// ordinary app, so the helper does it: SIGTERM first, SIGKILL only if the
+    /// process is still there a moment later.
     public func stopProcess(pid: pid_t) async throws {
-        // Try gentle SIGTERM
+        if (try? await PrivilegedHelper.shared.call(
+            HelperRequest(command: .killPID, pid: pid, signal: SIGTERM)
+        )) != nil {
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            if kill(pid, 0) == 0 {
+                _ = try? await PrivilegedHelper.shared.call(
+                    HelperRequest(command: .killPID, pid: pid, signal: SIGKILL)
+                )
+            }
+            return
+        }
+
         let res = kill(pid, SIGTERM)
         if res != 0 {
-            // If failed (e.g. EPERM for root daemon), prompt via AppleScript
             let script = "do shell script \"kill -TERM \(pid)\" with administrator privileges"
             if let appleScript = NSAppleScript(source: script) {
                 var errorDict: NSDictionary?
@@ -605,9 +640,106 @@ public actor VPNTunnelEngine {
         }
     }
 
+    /// One button that puts the Mac back on a plain connection: every VPN
+    /// service stopped, every VPN engine ended, DNS and routes cleared, and the
+    /// physical interface re-armed if the default route did not come back.
+    ///
+    /// This is the escape hatch for the worst case — a sweep or a client that
+    /// left a tunnel half-up — and it is deliberately wider than "disconnect":
+    /// it does not depend on a provider answering politely.
+    public func forceRestoreInternet() async -> VPNRescueReport {
+        var stoppedServices: [String] = []
+        var killedEngines: [String] = []
+        var notes: [String] = []
+
+        let current = await scan()
+        for service in current.services {
+            _ = try? await runner.run(
+                executable: "/usr/sbin/scutil",
+                arguments: ["--nc", "stop", service.name],
+                timeout: 5
+            )
+            _ = try? await runner.run(
+                executable: "/usr/sbin/scutil",
+                arguments: ["--nc", "disablevpn", service.name],
+                timeout: 5
+            )
+            stoppedServices.append(service.name)
+        }
+
+        for process in current.processes {
+            if (try? await PrivilegedHelper.shared.call(
+                HelperRequest(command: .killPID, pid: process.pid, signal: SIGTERM)
+            )) != nil {
+                killedEngines.append(process.displayName)
+            } else if kill(process.pid, SIGTERM) == 0 {
+                killedEngines.append(process.displayName)
+            }
+        }
+        if !killedEngines.isEmpty {
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            for process in current.processes where kill(process.pid, 0) == 0 {
+                _ = try? await PrivilegedHelper.shared.call(
+                    HelperRequest(command: .killPID, pid: process.pid, signal: SIGKILL)
+                )
+            }
+        }
+
+        var resetMessage = ""
+        do {
+            let reply = try await PrivilegedHelper.shared.call(
+                HelperRequest(command: .resetNetwork),
+                timeout: 45
+            )
+            resetMessage = reply.message
+        } catch {
+            // Without the helper, the parts an ordinary app may do are still done.
+            try? await flushDNSAndResetRouting()
+            resetMessage = "DNS cache flushed and routes cleared. The one-time helper is not installed, so stopping root engines and re-arming the interface needed a password and was skipped."
+        }
+        if !resetMessage.isEmpty { notes.append(resetMessage) }
+
+        let after = await scan()
+        let stillUp = after.summary.activeVPNInterface != nil
+        return VPNRescueReport(
+            stoppedServices: stoppedServices,
+            killedEngines: killedEngines,
+            notes: notes,
+            tunnelStillUp: stillUp,
+            defaultInterface: after.summary.defaultPhysicalInterface
+        )
+    }
+
     public func flushDNSAndResetRouting() async throws {
         _ = try? await runner.run(executable: "/usr/bin/dscacheutil", arguments: ["-flushcache"], timeout: 5)
         _ = try? await runner.run(executable: "/usr/bin/killall", arguments: ["-HUP", "mDNSResponder"], timeout: 5)
         _ = try? await runner.run(executable: "/usr/sbin/route", arguments: ["-n", "flush"], timeout: 5)
+    }
+}
+
+/// What a rescue did, in the order it did it, so the UI can say something true
+/// after the fact instead of "done".
+public struct VPNRescueReport: Sendable {
+    public let stoppedServices: [String]
+    public let killedEngines: [String]
+    public let notes: [String]
+    public let tunnelStillUp: Bool
+    public let defaultInterface: String?
+
+    public var summary: String {
+        var lines: [String] = []
+        if !stoppedServices.isEmpty {
+            lines.append("Stopped \(stoppedServices.count) VPN service\(stoppedServices.count == 1 ? "" : "s").")
+        }
+        if !killedEngines.isEmpty {
+            lines.append("Ended \(killedEngines.count) VPN engine\(killedEngines.count == 1 ? "" : "s").")
+        }
+        lines.append(contentsOf: notes)
+        if tunnelStillUp {
+            lines.append("A tunnel device is still present. Restart once if the internet does not answer.")
+        } else if let defaultInterface {
+            lines.append("You are back on \(defaultInterface).")
+        }
+        return lines.joined(separator: " ")
     }
 }

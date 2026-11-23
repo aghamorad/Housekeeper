@@ -53,6 +53,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         SpeedTestEngine.shared.cancel()
+
+        // A route test owns the machine's only tunnel while it runs. Quitting the
+        // app in the middle of one must not leave that tunnel holding the default
+        // route — that is how a Mac loses the internet until it is restarted.
+        RouteEngine.rescueAtQuitIfNeeded()
         // The housekeeper's runtime is a child process holding most of a gigabyte
         // while it is up, and it is nobody else's to shut down. Left alone it outlives
         // the app that started it, still resident and still listening, with nothing

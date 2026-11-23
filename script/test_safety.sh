@@ -26,6 +26,7 @@ mkdir -p "$BUILD_DIR/ModuleCache"
   -target arm64-apple-macosx13.0 \
   -module-cache-path "$BUILD_DIR/ModuleCache" \
   "$ROOT_DIR/Housekeeping/Sources/Core/Models.swift" \
+  "$ROOT_DIR/Housekeeping/Sources/Core/RowSelection.swift" \
   "$ROOT_DIR/Housekeeping/Sources/Housekeeper/HousekeeperConversation.swift" \
   "$ROOT_DIR/Housekeeping/Sources/Housekeeper/HousekeeperModel.swift" \
   "$ROOT_DIR/Housekeeping/Sources/Housekeeper/HousekeeperFolderEvidence.swift" \

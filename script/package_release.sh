@@ -16,6 +16,21 @@ SDK="$XCODE_APP/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacO
 APP_NAME="Housekeeper"
 MIN_MACOS="13.0"
 
+# Sign with the stable local identity when it exists. An ad-hoc signature changes
+# on every build and takes the reader's Full Disk Access grant with it, which is
+# why the app used to start asking for permissions again after each update.
+SIGNING_IDENTITY=""
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "Housekeeper Local Signing"; then
+  SIGNING_IDENTITY="Housekeeper Local Signing"
+fi
+sign() {
+  if [[ -n "$SIGNING_IDENTITY" ]]; then
+    codesign --force --sign "$SIGNING_IDENTITY" "$@"
+  else
+    codesign --force --sign - "$@"
+  fi
+}
+
 if [[ ! -x "$SWIFTC" || ! -d "$SDK" ]]; then
   echo "Housekeeping packaging could not find a usable macOS SDK and Swift compiler in $XCODE_APP." >&2
   exit 1
@@ -171,14 +186,14 @@ stage() {
   # exactly one signature covering it, and no ambiguity about which one counts.
   cp "$runtime" "$app/Contents/Resources/llama-server"
   chmod 755 "$app/Contents/Resources/llama-server"
-  codesign --force --sign - "$app/Contents/Resources/llama-server"
+  sign "$app/Contents/Resources/llama-server"
 
   # Versioned source and an explicitly verified universal runtime travel together.
   local bookbind_dst="$app/Contents/Resources/Bookbind"
   ditto "$BOOKBIND_SRC" "$bookbind_dst"
   ditto "$BOOKBIND_BIN" "$bookbind_dst/bin"
 
-  codesign --force --deep --sign - "$app"
+  sign --deep "$app"
   codesign --verify --deep --strict "$app"
   python3 "$ROOT_DIR/script/verify_universal_bundle.py" "$app"
 }

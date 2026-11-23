@@ -1,3 +1,32 @@
+## 0.32.0 — No More Permission Prompts, VPN Services That Actually Go Away, Safe Route Sweeps, and a Real Intel Mac Path
+
+- **One-time privileged helper, and a stable signing identity (`Core/PrivilegedHelper.swift`, `Core/HardwareProfile.swift`, `main.swift`, `script/setup_signing_identity.sh`, `script/package_release.sh`)**:
+  - Added `--privileged-helper` mode to the app's own signed binary, started by a launch daemon as root and listening on a Unix socket. It accepts a fixed vocabulary (stop a VPN service, remove a VPN profile, signal a process, reset the network, boot out a launch label, hand a home folder back to its owner) — never a shell string — and only answers the user who installed it.
+  - Stopping a root VPN engine, deleting a VPN profile, and re-arming the network no longer open a macOS password dialog on every press. One-Time Setup in the VPN screen installs the helper once; every later press just works.
+  - The app is now signed with a stable local code-signing certificate (`Housekeeper Local Signing`) when one exists. An ad-hoc signature changes on every build, so macOS discarded the reader's Full Disk Access grant after every update — the app then asked for permissions it had already been given. A stable signature makes the grant survive updates.
+- **VPN services can be removed, including the last one (`VPNTunnelEngine.swift`, `VPNTunnelsView.swift`)**:
+  - `networksetup -removenetworkservice` refuses to remove a VPN service because a VPN is always the only service on its own port — the "it is the only one left" failure. The helper matches the name to a real VPN entry in the system network configuration, keeps a dated backup beside it, removes it, and makes configd re-read the file.
+  - Added **Fix My Internet Now**: stops every VPN service, ends every VPN engine (SIGTERM then SIGKILL for root daemons), flushes DNS and routes, and re-arms the physical interface if the default route did not come back. It reports what it actually did.
+  - **Stop Engine** now reports when macOS restarted the daemon instead of claiming success.
+- **Route Sweep can no longer leave the internet behind (`RouteEngine.swift`, `RoutesView.swift`, `AppDelegate.swift`)**:
+  - A disconnect that returns without closing the tunnel is now treated as a failure: the engine verifies the tunnel state, and if it is still up asks the helper to put the whole network back. A run will not start on top of a tunnel it could not close.
+  - Pressing Stop, finishing a run, or quitting the app mid-run all guarantee a cleanup. A banner says the tunnel had to be forced down and offers **Fix My Internet Now**.
+- **Intel Macs get a local AI that works (`HardwareProfile.swift`, `LlamaServer.swift`, `LocalModels.swift`)**:
+  - MLX is Apple-silicon only and is now shown as unavailable on Intel instead of being offered; the app explains why and points at Housekeeper's own GGUF model, which is universal.
+  - On Intel, llama-server runs with `--n-gpu-layers 0` and every core, and model-loading waits up to four minutes instead of ninety seconds.
+- **A real Iranian DNS list, and DNS that changes without a password (`Network/DNSModels.swift`, `Network/DNSEngine.swift`, `Core/PrivilegedHelper.swift`)**:
+  - Added every anti-sanction resolver that answered from this connection on 23 November 2026: **Shecan**, **Begzar**, **Shelter**, **Beshkan**, **Electro Public (194.5.193.5/.6)**, plus carrier-provided **403.online**, **Radar**, **HostIran** and **Vanilla** with an explicit note that they only answer inside the ISPs that route them.
+  - Added verified global resolvers — Cloudflare Family, Mullvad, NextDNS, Control D, DNS0.eu and Yandex — each described by what it actually does.
+  - Applying a DNS preset now goes through the one-time helper, so switching DNS works and stops asking for the administrator password; the helper verifies the setting by reading it back.
+- **One press, one job (`UninstallerModernView.swift`, `CleanerView.swift`)**:
+  - The per-app Uninstall button now moves the app and its matched related files straight to Quarantine — reversible, so no review sheet.
+  - Emptying the Trash no longer asks the reader to type "ok"; one confirmation, then it is done.
+- **Native multi-select everywhere it matters (`Core/ProcessTerminator.swift`, `BackgroundActivityView.swift`, `VPNTunnelsView.swift`, `UninstallerModernView.swift`, `CleanerView.swift`, `SettingsView.swift`)**:
+  - Plain click selects one row, **Command-click** adds or removes one, **Shift-click** takes the whole run between the last click and this one — in Running Now, VPN engines, the uninstaller's app list, and Clean Up.
+  - Running Now and VPN Engines gained a selection bar with **Stop Selected**, which ends every chosen process (root daemons included, once the helper is installed) and says which ones macOS restarted.
+  - Settings gained a Permissions section showing the helper's state, with Set Up Once / Remove Helper and a direct route to Full Disk Access.
+- Version 0.32.0 (66).
+
 ## 0.31.0 — App Updater Fixes, Native Full Screen, Cartoon Cleaning Mascot, Navigation Moveset & Route Sweep Overhaul
 
 - **Fixed App Updater Bundle Replacement & Homebrew Sudo/Link Failures (`AppUpdateEngine.swift`, `UpdateView.swift`)**:

@@ -24,6 +24,7 @@ final class UninstallerModel: ObservableObject {
     private var scanWorker: Task<[InstalledApp], Never>?
     private var scanToken = UUID()
     @Published var selectedAppURLs: Set<URL> = []
+    private var selectionAnchorURL: URL?
     @Published var expandedAppURLs: Set<URL> = []
     @Published var searchQuery: String = "" {
         didSet {
@@ -224,6 +225,18 @@ final class UninstallerModel: ObservableObject {
         }
     }
 
+    /// Plain click selects one, Command-click adds or removes one, Shift-click
+    /// takes the run between the last click and this one — the behaviour every
+    /// Mac list has, and the only practical way to pick a dozen apps at once.
+    func applySelectionClick(_ app: InstalledApp, order: [URL]) {
+        RowSelection.apply(
+            id: app.url,
+            order: order,
+            selection: &selectedAppURLs,
+            anchor: &selectionAnchorURL
+        )
+    }
+
     func toggleSelection(_ app: InstalledApp) {
         guard !isWorking && !isScanning else { return }
         selectionNotice = nil
@@ -241,6 +254,20 @@ final class UninstallerModel: ObservableObject {
         } else {
             expandedAppURLs.insert(app.url)
         }
+    }
+
+    /// One press, one app: app plus its matched related files, straight to
+    /// Quarantine. The move is reversible, so there is nothing to confirm — and
+    /// requiring a review screen for a reversible move is the complexity that
+    /// made the uninstaller feel like paperwork.
+    func uninstallImmediately(_ app: InstalledApp) {
+        guard !isWorking, !isScanning, !app.isRunning else { return }
+        selectedAppURLs = [app.url]
+        includedRelatedPaths.formUnion(
+            app.leftovers.filter { !ProtectionList().isProtected($0.url) }.map(\.id)
+        )
+        prepareUninstall()
+        executeUninstall()
     }
 
     func prepareUninstall() {
@@ -729,8 +756,7 @@ struct UninstallerModernView: View {
                     if app.isRunning {
                         model.requestQuit(app)
                     } else {
-                        model.selectedAppURLs = [app.url]
-                        model.prepareUninstall()
+                        model.uninstallImmediately(app)
                     }
                 } label: {
                     HStack(spacing: 4) {
@@ -744,7 +770,9 @@ struct UninstallerModernView: View {
                     .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
                 }
                 .buttonStyle(.plain)
-                .help(app.isRunning ? "Ask \(app.name) to quit normally; review removal after it closes" : "Review \(app.name) and its matched related files")
+                .help(app.isRunning
+                      ? "Ask \(app.name) to quit normally; uninstall becomes available once it closes"
+                      : "Move \(app.name) and its matched related files to Quarantine now. Reversible from Quarantine.")
                 .disabled(model.isScanning)
 
                 Button {
@@ -765,6 +793,10 @@ struct UninstallerModernView: View {
                 Divider().padding(.horizontal, 14)
                 leftoversDetail(app)
             }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            model.applySelectionClick(app, order: model.filteredApps.map(\.url))
         }
         .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 12))
         .overlay(

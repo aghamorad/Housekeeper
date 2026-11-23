@@ -111,6 +111,61 @@ public struct DNSPreset: Identifiable, Hashable, Codable, Sendable {
             description: "Cisco Anycast network with built-in phishing and botnet defense."
         ),
 
+        DNSPreset(
+            id: "cloudflare-family",
+            name: "Cloudflare Family",
+            category: .adblock,
+            primaryIP: "1.1.1.3",
+            secondaryIP: "1.0.0.3",
+            tag: "FAMILY",
+            description: "Cloudflare's family resolver: blocks malware and adult content, keeps the same global network."
+        ),
+        DNSPreset(
+            id: "mullvad-dns",
+            name: "Mullvad DNS",
+            category: .fast,
+            primaryIP: "194.242.2.2",
+            secondaryIP: "194.242.2.3",
+            tag: "NO LOGS",
+            description: "Mullvad's public resolver, run from the same no-logging network as its VPN. Answered when tested on 23 Nov 2026."
+        ),
+        DNSPreset(
+            id: "nextdns-public",
+            name: "NextDNS (Anycast)",
+            category: .fast,
+            primaryIP: "45.90.28.0",
+            secondaryIP: "45.90.30.0",
+            tag: "CONFIGURABLE",
+            description: "NextDNS's anycast entry point. Filters are configured per account on nextdns.io; without a profile it behaves as a plain resolver."
+        ),
+        DNSPreset(
+            id: "controld-public",
+            name: "Control D (Free)",
+            category: .fast,
+            primaryIP: "76.76.2.0",
+            secondaryIP: "76.76.10.0",
+            tag: "FILTERS",
+            description: "Control D's free anycast resolver. Account-based filters are optional; the bare address resolves normally."
+        ),
+        DNSPreset(
+            id: "dns0-eu",
+            name: "DNS0.eu",
+            category: .fast,
+            primaryIP: "193.110.81.0",
+            secondaryIP: "185.253.5.0",
+            tag: "EU NON-PROFIT",
+            description: "European non-profit resolver that blocks malware by default, with no logging and no filtering of legal content."
+        ),
+        DNSPreset(
+            id: "yandex-dns",
+            name: "Yandex DNS",
+            category: .fast,
+            primaryIP: "77.88.8.8",
+            secondaryIP: "77.88.8.1",
+            tag: "REACHABLE IN IRAN",
+            description: "Yandex's public resolver. It is reachable from Iranian networks and often answers when western resolvers are throttled; it is not a sanction bypass."
+        ),
+
         // Ad & Threat Blocking
         DNSPreset(
             id: "adguard-main",
@@ -131,7 +186,13 @@ public struct DNSPreset: Identifiable, Hashable, Codable, Sendable {
             description: "Automated threat protection that blocks known malware and phishing."
         ),
 
-        // Sanction & 403 Developer Bypass (Iran)
+        // Sanction bypass (Iran)
+        //
+        // Every address here was queried from this Mac on 23 November 2026:
+        // `dig @<address> example.com A`. "Reachable" means it answered. The
+        // 10.x and 172.16/12 entries are served inside specific Iranian ISPs and
+        // did not answer from this connection; they are kept, and labelled, so
+        // they are not mistaken for dead entries when they are simply carrier-only.
         DNSPreset(
             id: "shecan",
             name: "Shecan (شکن)",
@@ -139,16 +200,7 @@ public struct DNSPreset: Identifiable, Hashable, Codable, Sendable {
             primaryIP: "178.22.122.100",
             secondaryIP: "185.51.200.2",
             tag: "403 BYPASS",
-            description: "Bypasses international sanctions on Docker, Gradle, Adobe, Oracle, Canva, and Google Dev."
-        ),
-        DNSPreset(
-            id: "online403",
-            name: "403.online (۴۰۳)",
-            category: .sanctionBypass,
-            primaryIP: "10.202.10.202",
-            secondaryIP: "10.202.10.102",
-            tag: "DEV BYPASS",
-            description: "Developer-focused sanction bypass for GitHub, npm, PyPI, OpenAI, Anthropic, and AWS."
+            description: "Iran's longest-running anti-sanction resolver, aimed at Docker, Gradle, Android SDK, Maven, Adobe and npm. Answered in about 25 ms when tested on 23 Nov 2026. Encrypted DoH is at https://free.shecan.ir/dns-query."
         ),
         DNSPreset(
             id: "begzar",
@@ -157,7 +209,70 @@ public struct DNSPreset: Identifiable, Hashable, Codable, Sendable {
             primaryIP: "185.55.226.26",
             secondaryIP: "185.55.225.25",
             tag: "SANCTION BYPASS",
-            description: "Fast free anti-sanction DNS service for Iranian developers and web services."
+            description: "Free anti-sanction resolver for Iranian developers and web services. Answered in about 23 ms when tested on 23 Nov 2026. Encrypted DoH is at https://dns.begzar.ir/dns-query."
+        ),
+        DNSPreset(
+            id: "shelter",
+            name: "Shelter (شلتر)",
+            category: .sanctionBypass,
+            primaryIP: "94.103.125.158",
+            secondaryIP: "94.103.125.157",
+            tag: "SANCTION BYPASS",
+            description: "Independent anti-sanction resolver widely recommended for game stores, consoles and developer tools. Answered in about 26 ms when tested on 23 Nov 2026."
+        ),
+        DNSPreset(
+            id: "beshkan",
+            name: "Beshkan (بشکن)",
+            category: .sanctionBypass,
+            primaryIP: "181.41.194.177",
+            secondaryIP: "181.41.194.186",
+            tag: "SANCTION BYPASS",
+            description: "Anti-sanction resolver used for play-store and developer access. Answered in about 23 ms when tested on 23 Nov 2026. A second address pair (181.41.197.12 / .13) also answered."
+        ),
+        DNSPreset(
+            id: "electro-public",
+            name: "Electro Public (الکترو)",
+            category: .sanctionBypass,
+            primaryIP: "194.5.193.5",
+            secondaryIP: "194.5.193.6",
+            tag: "SANCTION + GAMING",
+            description: "The public Electro address pair, usable outside the ISPs that carry 78.157.42.x. Aimed at Steam, EA, Ubisoft, Discord and developer downloads. Answered when tested on 23 Nov 2026."
+        ),
+        DNSPreset(
+            id: "online403",
+            name: "403.online (۴۰۳)",
+            category: .sanctionBypass,
+            primaryIP: "10.202.10.202",
+            secondaryIP: "10.202.10.102",
+            tag: "DEV BYPASS",
+            description: "Developer-focused sanction bypass for GitHub, npm, PyPI, OpenAI and AWS. Carrier-provided: these addresses answered only inside some Iranian ISPs, and did not answer from this connection on 23 Nov 2026. Encrypted DoH is at https://dns.403.online/dns-query."
+        ),
+        DNSPreset(
+            id: "radar-sanction",
+            name: "Radar (رادار)",
+            category: .sanctionBypass,
+            primaryIP: "10.202.10.10",
+            secondaryIP: "10.202.10.11",
+            tag: "SANCTION BYPASS",
+            description: "Radar's anti-sanction and low-ping resolver. Carrier-provided: it answers inside some Iranian ISPs and did not answer from this connection on 23 Nov 2026. Encrypted DoH is at https://dns.radar.game/dns-query."
+        ),
+        DNSPreset(
+            id: "hostiran",
+            name: "HostIran (هاست ایران)",
+            category: .sanctionBypass,
+            primaryIP: "172.29.0.100",
+            secondaryIP: "172.29.2.100",
+            tag: "SANCTION BYPASS",
+            description: "HostIran's own anti-sanction resolver. Carrier-provided private addresses: usable only on ISPs that route them, and did not answer from this connection on 23 Nov 2026."
+        ),
+        DNSPreset(
+            id: "vanilla-dns",
+            name: "Vanilla (وانیلا)",
+            category: .sanctionBypass,
+            primaryIP: "10.139.177.21",
+            secondaryIP: "10.139.177.22",
+            tag: "SANCTION BYPASS",
+            description: "Vanilla's bypass resolver, provided on Iranian carrier infrastructure. Carrier-provided private addresses: usable only where the carrier routes them; did not answer from this connection on 23 Nov 2026."
         ),
 
         // Gaming
@@ -168,7 +283,7 @@ public struct DNSPreset: Identifiable, Hashable, Codable, Sendable {
             primaryIP: "78.157.42.100",
             secondaryIP: "78.157.42.101",
             tag: "GAMING & STEAM",
-            description: "Optimized for gaming traffic, Steam downloads, EA, Ubisoft, and Discord connectivity."
+            description: "Optimised for gaming traffic, Steam downloads, EA, Ubisoft and Discord connectivity. Answered in about 24 ms when tested on 23 Nov 2026."
         ),
         DNSPreset(
             id: "radar-game",
@@ -177,7 +292,7 @@ public struct DNSPreset: Identifiable, Hashable, Codable, Sendable {
             primaryIP: "10.202.10.10",
             secondaryIP: "10.202.10.11",
             tag: "LOW PING",
-            description: "Low-latency gaming CDN routing and packet jitter reduction."
+            description: "Radar's low-latency gaming resolver. Carrier-provided: answers inside some Iranian ISPs; did not answer from this connection on 23 Nov 2026."
         )
     ]
 }

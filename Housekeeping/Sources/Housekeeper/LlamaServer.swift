@@ -247,8 +247,12 @@ final class LlamaServer: ObservableObject {
             "--host", "127.0.0.1",
             "--port", "\(port)",
             "--ctx-size", "8192",
-            "--threads", "\(max(2, ProcessInfo.processInfo.activeProcessorCount / 2))",
-            "--n-gpu-layers", "999",
+            // Apple silicon hands layers to the GPU. An Intel Mac has no Metal
+            // backend in llama.cpp, so asking for 999 layers there just makes the
+            // runtime try and fall back; zero is the honest number, and every
+            // core is better than half of them when the processor is doing the work.
+            "--threads", "\(HardwareProfile.isAppleSilicon ? max(2, ProcessInfo.processInfo.activeProcessorCount / 2) : max(2, ProcessInfo.processInfo.activeProcessorCount - 1))",
+            "--n-gpu-layers", HardwareProfile.isAppleSilicon ? "999" : "0",
             "--no-webui",
         ]
 
@@ -309,7 +313,9 @@ final class LlamaServer: ObservableObject {
         guard let health = URL(string: "http://127.0.0.1:\(port)/health") else { return false }
         var request = URLRequest(url: health)
         request.timeoutInterval = 2
-        let deadline = Date().addingTimeInterval(90)
+        // An Intel Mac loading a 4B model from a cold disk is slow, and 90
+        // seconds is not a generous deadline there — it is a failure notice.
+        let deadline = Date().addingTimeInterval(HardwareProfile.isAppleSilicon ? 90 : 240)
 
         while Date() < deadline {
             if Task.isCancelled { return false }

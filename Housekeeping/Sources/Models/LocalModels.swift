@@ -281,6 +281,7 @@ final class LocalModelInventory: ObservableObject {
                     facts.append(ByteCountFormatter.string(fromByteCount: residentBytes, countStyle: .memory))
                 }
 
+                let mlxSupported = HardwareProfile.isAppleSilicon
                 models.append(LocalModel(
                     id: "mlx:\(entry.path)",
                     runtime: .mlx,
@@ -290,9 +291,11 @@ final class LocalModelInventory: ObservableObject {
                     loaded: isLoaded,
                     residentBytes: isLoaded ? residentBytes : nil,
                     path: resolved.path,
-                    control: .loadAndUnload,
+                    control: mlxSupported ? .loadAndUnload : .none,
                     reference: entry.path,
-                    note: isLoaded ? "Currently resident in memory on port 18434. Click Unload to release RAM." : (isCurrent ? "Active default symlink in ~/.mlx-lm/models/current. Click Load to warm it into memory." : "Stored MLX weights. Click Load to switch active model and load into RAM.")
+                    note: mlxSupported
+                        ? (isLoaded ? "Currently resident in memory on port 18434. Click Unload to release RAM." : (isCurrent ? "Active default symlink in ~/.mlx-lm/models/current. Click Load to warm it into memory." : "Stored MLX weights. Click Load to switch active model and load into RAM."))
+                        : "MLX cannot run on this Intel Mac. These files stay listed so you can see the disk they use; use Housekeeper's own model instead."
                 ))
             }
         }
@@ -382,6 +385,10 @@ final class LocalModelInventory: ObservableObject {
             }
         } else {
             group.hint = "Found \(group.models.count) model\(group.models.count == 1 ? "" : "s") on disk. Click Load on any model to start the MLX server and load it into RAM."
+        }
+
+        if let reason = HardwareProfile.mlxUnavailableReason {
+            group.hint = reason
         }
 
         return group
@@ -1159,6 +1166,10 @@ final class LocalModelInventory: ObservableObject {
     }
 
     func load(_ model: LocalModel) async {
+        if model.runtime == .mlx, let reason = HardwareProfile.mlxUnavailableReason {
+            problem = reason
+            return
+        }
         guard busy == nil, !model.loaded, model.control == .loadAndUnload else { return }
         if let refusal = refusal(for: model) {
             problem = refusal

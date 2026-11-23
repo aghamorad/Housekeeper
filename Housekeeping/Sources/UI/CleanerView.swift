@@ -4,7 +4,7 @@ import SwiftUI
 /// Clean Up. A shelf of six kinds of thing, each with its own explanation, and a
 /// footer that only ever acts on what the reader ticked. Everything but the
 /// Trash goes into Quarantine and can come back; the Trash is the one exception,
-/// and it says so in words before it asks for a typed confirmation.
+/// and it says so in words before it asks.
 struct CleanerView: View {
     @ObservedObject var model: CleanerModel
     @EnvironmentObject private var appState: AppState
@@ -448,6 +448,9 @@ struct CleanerView: View {
         // Without this the row only answers a right-click where it has drawn
         // text, so the empty right half of a row would do nothing.
         .contentShape(Rectangle())
+        .onTapGesture {
+            model.applySelectionClick(candidate, order: model.visibleCandidates(in: model.category).map(\.id))
+        }
         .hoverHighlight(cornerRadius: 10, normal: style.rowBackground, hovered: style.groupingBackground, stroke: style.border)
         .contextMenu {
             Button {
@@ -730,7 +733,7 @@ struct CleanerView: View {
                             title: "Empty Trash…",
                             systemImage: "trash",
                             isEnabled: !model.trash.isEmpty && model.phase == .ready,
-                            help: "Asks for a typed confirmation first. This is the one action in Housekeeping that cannot be undone."
+                            help: "Asks once, in the dialog. This is the one action in Housekeeping that cannot be undone."
                         ) { model.requestEmptyTrash() }
                         ThemeButton(
                             title: "Show Trash in Finder",
@@ -910,23 +913,10 @@ struct CleanerView: View {
                         }
                     }
 
-                    if action != .clean {
-                        HStack(spacing: 8) {
-                            Text("Type “ok” to confirm:")
-                                .font(style.smallFont)
-                            TextField("ok", text: $model.confirmationText)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 90)
-                                .onSubmit { if matches(action) { model.confirmPending() } }
-
-                            Button("Fill “ok”") {
-                                model.confirmationText = "ok"
-                                model.confirmPending()
-                            }
+                    if action == .emptyTrash {
+                        Text("This is the one action in Housekeeping that cannot be undone. There is no Quarantine copy of what is in the Trash.")
                             .font(style.smallFont)
-                            .buttonStyle(.bordered)
-                            .help("Autofill 'ok' for 1-tap confirmation.")
-                        }
+                            .foregroundColor(style.caution)
                     }
 
                     if let hint = model.confirmationHint {
@@ -941,7 +931,7 @@ struct CleanerView: View {
                         ThemeButton(
                             title: action == .emptyTrash ? "Delete Permanently" : "Move to Quarantine",
                             isPrimary: true,
-                            isEnabled: action == .clean || matches(action),
+                            isEnabled: true,
                             help: action == .emptyTrash
                                 ? "Removes what is in the Trash for good."
                                 : "Moves everything listed into Quarantine, where it can be put back."
@@ -970,7 +960,7 @@ struct CleanerView: View {
         var facts: [String] = []
         facts.append("This is the Clean Up screen. It finds things that can be made again — caches, logs, build folders, installers — and moves them into Quarantine when the reader ticks them and confirms.")
         facts.append("Everything except the Trash is reversible: the items are moved, not deleted, and Quarantine can put them back.")
-        facts.append("The Trash is the only irreversible action on this screen. Emptying it asks for a typed confirmation and leaves no Quarantine copy.")
+        facts.append("The Trash is the only irreversible action on this screen. Emptying it asks once, in the dialog, and leaves no Quarantine copy.")
 
         for category in CleanCategory.allCases {
             switch category {

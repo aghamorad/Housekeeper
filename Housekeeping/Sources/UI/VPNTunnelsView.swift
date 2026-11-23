@@ -19,6 +19,10 @@ final class VPNTunnelsModel: ObservableObject {
     @Published var selectedTab: VPNTunnelTab = .services
     @Published var pendingDeleteService: VPNTunnelService? = nil
     @Published var actionNotice: String? = nil
+    @Published private(set) var isRescuing = false
+    @Published private(set) var isInstallingHelper = false
+    @Published private(set) var helperInstalled = PrivilegedHelper.shared.isInstalled
+    @Published private(set) var rescueSummary: String? = nil
 
     public enum VPNTunnelTab: String, CaseIterable, Identifiable {
         case services = "Configured VPN Services"
@@ -40,6 +44,40 @@ final class VPNTunnelsModel: ObservableObject {
 
     init() {
         refresh()
+        PrivilegedHelper.shared.refresh()
+    }
+
+    /// The helper is a one-time setup, not a per-action permission. This only
+    /// asks whether it is present; it never prompts.
+    func installHelper() {
+        guard !isInstallingHelper else { return }
+        isInstallingHelper = true
+        Task {
+            do {
+                try await PrivilegedHelper.shared.install()
+                helperInstalled = true
+                actionNotice = "One-time helper installed. macOS will not ask for an administrator password for these tools again."
+            } catch {
+                actionNotice = "The helper was not installed: \(error.localizedDescription)"
+            }
+            isInstallingHelper = false
+            refresh()
+        }
+    }
+
+    /// Stops every VPN, ends every VPN engine, and puts the Mac back on a plain
+    /// connection. This is the button for "nothing works and I do not know why".
+    func rescueInternet() {
+        guard !isRescuing else { return }
+        isRescuing = true
+        rescueSummary = nil
+        Task {
+            let report = await VPNTunnelEngine.shared.forceRestoreInternet()
+            isRescuing = false
+            rescueSummary = report.summary
+            actionNotice = nil
+            refresh()
+        }
     }
 
     func refresh() {
@@ -96,8 +134,27 @@ final class VPNTunnelsModel: ObservableObject {
 
     func stopProcess(_ proc: RunningVPNProcess) {
         Task {
-            try? await VPNTunnelEngine.shared.stopProcess(pid: proc.pid)
-            actionNotice = "Stopped \(proc.displayName) (PID \(proc.pid))"
+            do {
+                try await VPNTunnelEngine.shared.stopProcess(pid: proc.pid)
+                let stillThere = kill(proc.pid, 0) == 0
+                actionNotice = stillThere
+                    ? "\(proc.displayName) (PID \(proc.pid)) is still running. macOS restarted it, or it needs the one-time helper. Use Fix My Internet Now."
+                    : "Stopped \(proc.displayName) (PID \(proc.pid))"
+            } catch {
+                actionNotice = "Could not stop \(proc.displayName): \(error.localizedDescription)"
+            }
+            refresh()
+        }
+    }
+
+    func clearRescueSummary() {
+        rescueSummary = nil
+    }
+
+    func stopAllEngines() {
+        Task {
+            let report = await VPNTunnelEngine.shared.forceRestoreInternet()
+            rescueSummary = report.summary
             refresh()
         }
     }
@@ -117,12 +174,23 @@ struct VPNTunnelsView: View {
     @EnvironmentObject private var appState: AppState
     @ObservedObject var model: VPNTunnelsModel = .shared
     @Environment(\.uiStyle) private var style
+    @State private var selectedPIDs: Set<Int> = []
+    @State private var pidAnchor: Int?
+    @State private var stoppingSelection = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header
                 kpiBar
+
+                if !model.helperInstalled {
+                    helperSetupCard
+                }
+
+                if let summary = model.rescueSummary {
+                    rescueResultBanner(summary)
+                }
 
                 if let notice = model.actionNotice {
                     actionNoticeBanner(notice)
@@ -183,12 +251,22 @@ struct VPNTunnelsView: View {
             Spacer()
             HStack(spacing: 10) {
                 ThemeButton(
-                    title: "Flush DNS & Reset",
+                    title: model.isRescuing ? "Fixing…" : "Fix My Internet Now",
+                    systemImage: "lifepreserver.fill",
+                    isPrimary: true,
+                    isEnabled: !model.isRescuing
+                ) {
+                    model.rescueInternet()
+                }
+                .help("Stops every VPN service and engine, clears DNS and routes, and puts this Mac back on a plain connection")
+
+                ThemeButton(
+                    title: "Flush DNS",
                     systemImage: "bolt.shield.fill"
                 ) {
                     model.flushDNSAndReset()
                 }
-                .help("Flushes macOS DNS cache and resets routing table to recover from network stalls")
+                .help("Flushes the DNS cache only. Keeps VPNs alone.")
 
                 ThemeButton(
                     title: "Refresh",
@@ -262,6 +340,67 @@ struct VPNTunnelsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(style.border, lineWidth: 1))
+    }
+
+    // MARK: - Helper setup & rescue result
+
+    private var helperSetupCard: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "key.horizontal.fill")
+                .font(.system(size: 20))
+                .foregroundStyle(style.accent)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("One-time setup: stop the password prompts")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Stopping a root VPN engine, removing a VPN profile, or re-arming your network needs permission macOS only grants to an administrator. Housekeeper can ask for your password every single time — or you can let it install a small helper once, and then these buttons just work.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+
+            ThemeButton(
+                title: model.isInstallingHelper ? "Installing…" : "Set Up Once",
+                systemImage: "checkmark.shield.fill",
+                isPrimary: true,
+                isEnabled: !model.isInstallingHelper
+            ) {
+                model.installHelper()
+            }
+        }
+        .padding(14)
+        .background(style.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(style.accent.opacity(0.25), lineWidth: 1))
+    }
+
+    private func rescueResultBanner(_ summary: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Network reset")
+                    .font(.system(size: 13, weight: .semibold))
+                Text(summary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Button {
+                model.clearRescueSummary()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(14)
+        .background(Color.green.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.25), lineWidth: 1))
     }
 
     // MARK: - Notices
@@ -588,6 +727,26 @@ struct VPNTunnelsView: View {
                     detail: "No active third-party VPN daemons or routing loops are consuming system resources."
                 )
             } else {
+                if !selectedPIDs.isEmpty {
+                    HStack(spacing: 12) {
+                        Text("\(selectedPIDs.count) selected")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Shift-click for a range, Command-click to add or remove one.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Clear") { selectedPIDs.removeAll(); pidAnchor = nil }
+                            .buttonStyle(.bordered)
+                        Button(stoppingSelection ? "Stopping…" : "Stop Selected Engines") {
+                            stopSelectedEngines()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .disabled(stoppingSelection)
+                    }
+                    .padding(10)
+                    .background(Color.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                }
                 ForEach(model.processes) { proc in
                     processRow(proc)
                 }
@@ -657,8 +816,21 @@ struct VPNTunnelsView: View {
             .help("Terminate this VPN background process")
         }
         .padding(14)
-        .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(style.border, lineWidth: 1))
+        .background(
+            selectedPIDs.contains(Int(proc.pid)) ? style.accent.opacity(0.14) : style.rowBackground,
+            in: RoundedRectangle(cornerRadius: 12)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 12)
+            .stroke(selectedPIDs.contains(Int(proc.pid)) ? style.accent.opacity(0.6) : style.border, lineWidth: 1.5))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            RowSelection.apply(
+                id: Int(proc.pid),
+                order: model.processes.map { Int($0.pid) },
+                selection: &selectedPIDs,
+                anchor: &pidAnchor
+            )
+        }
         .contextMenu {
             Button {
                 let knowledge = ProcessKnowledge.resolve(pid: proc.pid, name: proc.name)
@@ -674,6 +846,28 @@ struct VPNTunnelsView: View {
             } label: {
                 Label("Stop Engine", systemImage: "xmark.circle")
             }
+        }
+    }
+
+    private func stopSelectedEngines() {
+        guard !stoppingSelection else { return }
+        let chosen = model.processes.filter { selectedPIDs.contains(Int($0.pid)) }
+        guard !chosen.isEmpty else { return }
+        stoppingSelection = true
+        Task {
+            var failures: [String] = []
+            for proc in chosen {
+                if let reason = await ProcessTerminator.terminate(pid: proc.pid) {
+                    failures.append(reason)
+                }
+            }
+            stoppingSelection = false
+            selectedPIDs.removeAll()
+            pidAnchor = nil
+            model.actionNotice = failures.isEmpty
+                ? "Stopped \(chosen.count) VPN engine\(chosen.count == 1 ? "" : "s")."
+                : "Stopped most engines. \(failures.count) could not be stopped — use Fix My Internet Now."
+            model.refresh()
         }
     }
 

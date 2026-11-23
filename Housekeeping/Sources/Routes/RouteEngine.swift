@@ -29,6 +29,11 @@ final class RouteEngine: ObservableObject {
     @Published private(set) var baseline: BaselineSample?
     @Published private(set) var startedAt: Date?
     @Published var errorMessage: String?
+    /// Set when a run ended but the tunnel would not let go. The UI shows this
+    /// beside a one-click network rescue, because "the test is over" and "your
+    /// internet works" are not the same claim.
+    @Published private(set) var cleanupMessage: String?
+    @Published private(set) var isCleaningUp = false
 
     /// Called once when a run ends, after the app has been returned to its
     /// resting state. The flag is `true` when the run reached the end and
@@ -36,7 +41,21 @@ final class RouteEngine: ObservableObject {
     var onFinish: ((Bool) -> Void)?
 
     private var task: Task<Void, Never>?
+    /// The provider whose tunnel this engine currently owns. Kept so Stop can
+    /// close the tunnel even after the run loop has been cancelled.
+    private var activeProvider: (any VPNProvider)?
 
+    /// True from the moment a run starts until its tunnel is confirmed closed.
+    /// Read at quit, when there is no run loop left to ask the engine directly.
+    nonisolated(unsafe) static var tunnelMayBeOpen = false
+
+    /// The app's terminate hook. No await is possible there, so the helper is
+    /// asked synchronously to put the network back — but only when a run was in
+    /// flight, so quitting Housekeeper never disconnects a VPN the reader chose.
+    nonisolated static func rescueAtQuitIfNeeded() {
+        guard tunnelMayBeOpen else { return }
+        _ = PrivilegedHelper.send(HelperRequest(command: .resetNetwork), timeout: 20)
+    }
     /// How often the tunnel state is re-read while waiting for it to settle.
     private let pollInterval: Double = 0.25
 
@@ -72,8 +91,18 @@ final class RouteEngine: ObservableObject {
         task = nil
         isRunning = false
         phase = .idle
-        activity = "Stopped"
+        activity = "Closing the tunnel…"
+        let provider = activeProvider
+        Task { [weak self] in
+            guard let self else { return }
+            if let provider {
+                await self.ensureTunnelDown(provider)
+            }
+            self.activity = "Stopped"
+        }
     }
+
+
 
     /// Measure the network with no tunnel up, so every route has a reference.
     func measureBaseline(probeHost: String, probeURL: String, options: RouteOptions) {
@@ -100,6 +129,10 @@ final class RouteEngine: ObservableObject {
         }
     }
 
+    func clearCleanupMessage() {
+        cleanupMessage = nil
+    }
+
     func clearResults() {
         guard !isRunning else { return }
         results = []
@@ -117,19 +150,25 @@ final class RouteEngine: ObservableObject {
         probeHost: String,
         probeURL: String
     ) async {
-        defer {
-            let completed = !Task.isCancelled
-            isRunning = false
-            phase = .idle
-            currentTarget = nil
-            onFinish?(completed)
-        }
+        activeProvider = provider
+        cleanupMessage = nil
+        RouteEngine.tunnelMayBeOpen = true
 
         // Start from a known state; a tunnel left up by an earlier run would
-        // make the first connect a no-op and its timing meaningless.
+        // make the first connect a no-op and its timing meaningless. If the
+        // tunnel will not close, do not start: measuring routes behind a tunnel
+        // that is already up is how a run ends with no internet.
         await provider.disconnect()
-        _ = await waitForSettled(provider, target: .disconnected,
-                                 timeout: 12, options: options)
+        if !(await waitForSettled(provider, target: .disconnected, timeout: 12, options: options)) {
+            await ensureTunnelDown(provider)
+            if await provider.tunnelState() != .disconnected {
+                errorMessage = "A VPN tunnel is still up and would not close, so the test did not start. Press Fix My Internet Now."
+                cleanupMessage = "The tunnel would not close. Nothing was tested."
+                activeProvider = nil
+                finish(completed: false)
+                return
+            }
+        }
 
         for (index, target) in targets.enumerated() {
             if Task.isCancelled { break }
@@ -154,11 +193,47 @@ final class RouteEngine: ObservableObject {
             }
         }
 
-        // Never leave the machine on a route the user did not pick.
+        // Never leave the machine on a route the user did not pick — and do not
+        // take the provider's word for it. A disconnect that returns without
+        // closing the tunnel is exactly the failure that took the internet away.
         phase = .disconnecting
+        activity = "Closing the tunnel…"
+        await ensureTunnelDown(provider)
+
+        let completed = !Task.isCancelled
+        activity = completed ? "Finished" : "Stopped"
+        activeProvider = nil
+        finish(completed: completed)
+    }
+
+    private func finish(completed: Bool) {
+        RouteEngine.tunnelMayBeOpen = false
+        isRunning = false
+        phase = .idle
+        currentTarget = nil
+        onFinish?(completed)
+    }
+
+    /// Ask the provider to disconnect, wait for it, and if it is still up, put
+    /// the machine back together through the privileged helper. Failure here is
+    /// reported, never swallowed.
+    private func ensureTunnelDown(_ provider: any VPNProvider) async {
+        isCleaningUp = true
+        defer { isCleaningUp = false }
+
         await provider.disconnect()
-        _ = await waitForSettled(provider, target: .disconnected, timeout: 12, options: options)
-        activity = Task.isCancelled ? "Stopped" : "Finished"
+        if await waitForSettled(provider, target: .disconnected,
+                                timeout: 12,
+                                options: RouteOptions()) {
+            return
+        }
+
+        let stillUp = await provider.tunnelState() != .disconnected
+        let report = await VPNTunnelEngine.shared.forceRestoreInternet()
+        cleanupMessage = report.summary
+        if stillUp {
+            cleanupMessage = "The client said it disconnected but a tunnel was still up. " + report.summary
+        }
     }
 
     /// Returns a failure description, or nil when the route came up.

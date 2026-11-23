@@ -41,6 +41,10 @@ struct RoutesView: View {
                 bannerBar(error, tint: style.negative)
                 Divider()
             }
+            if let cleanup = model.engine.cleanupMessage {
+                cleanupBar(cleanup)
+                Divider()
+            }
 
             HStack(spacing: 0) {
                 settingsColumn
@@ -65,6 +69,40 @@ struct RoutesView: View {
         .task { await model.loadIfNeeded() }
     }
 
+    // MARK: - Cleanup banner
+
+    /// "The test finished" is not the same claim as "your internet is back".
+    /// When a tunnel had to be forced down, this is the only place that says so
+    /// and the only button that can put the Mac back on a plain connection.
+    private func cleanupBar(_ message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(style.negative)
+            Text(message)
+                .font(style.smallFont)
+                .foregroundColor(style.text)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            Button("Fix My Internet Now") {
+                Task {
+                    _ = await VPNTunnelEngine.shared.forceRestoreInternet()
+                    model.engine.clearCleanupMessage()
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            Button {
+                model.engine.clearCleanupMessage()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(style.negative.opacity(0.08))
+    }
+
     // MARK: - Header
 
     private var header: some View {
@@ -76,6 +114,16 @@ struct RoutesView: View {
                 Text("Try the routes your client offers and find the one that actually carries traffic.")
                     .font(style.smallFont)
                     .foregroundColor(style.secondaryText)
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(model.status.tunnel == .connected ? Color.green : Color.secondary.opacity(0.5))
+                        .frame(width: 7, height: 7)
+                    Text(model.status.tunnel == .connected
+                         ? "Tunnel up\(model.status.publicIP.map { " · exit \($0)" } ?? "")"
+                         : "No tunnel up right now")
+                        .font(style.smallFont)
+                        .foregroundColor(style.secondaryText)
+                }
             }
 
             Spacer()

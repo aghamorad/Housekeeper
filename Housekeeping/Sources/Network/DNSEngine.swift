@@ -141,23 +141,14 @@ public final class DNSEngine: ObservableObject {
             let primary = preset.primaryIP
             let secondary = preset.secondaryIP
 
-            let success = await Task.detached(priority: .userInitiated) {
-                var ok = true
-                for iface in targetInterfaces {
-                    let res: Int32
-                    if isDHCP {
-                        res = self.runTool("/usr/sbin/networksetup", ["-setdnsservers", iface, "empty"])
-                    } else if secondary.isEmpty {
-                        res = self.runTool("/usr/sbin/networksetup", ["-setdnsservers", iface, primary])
-                    } else {
-                        res = self.runTool("/usr/sbin/networksetup", ["-setdnsservers", iface, primary, secondary])
-                    }
-                    if res != 0 { ok = false }
-                }
-                // Flush macOS DNS cache
-                self.flushResolverCache()
-                return ok
-            }.value
+            let servers = isDHCP ? [] : [primary, secondary].filter { !$0.isEmpty }
+            var success = true
+            for iface in targetInterfaces {
+                if !(await self.setServers(servers, on: iface)) { success = false }
+            }
+            // Flush macOS DNS cache. The helper already does this when it made
+            // the change; this covers the fallback path too.
+            self.flushResolverCache()
 
             await self.reloadNetworkState()
             self.isWorking = false
@@ -173,6 +164,28 @@ public final class DNSEngine: ObservableObject {
                 self.statusNotice = nil
             }
         }
+    }
+
+    /// Sets the resolver for one network service, preferring the one-time
+    /// helper. Without the helper the same call is attempted the old way, which
+    /// is what needed an administrator password for every press.
+    private func setServers(_ servers: [String], on iface: String) async -> Bool {
+        do {
+            let reply = try PrivilegedHelper.shared.call(
+                HelperRequest(command: .setDNS, name: iface, servers: servers),
+                timeout: 20
+            )
+            return reply.ok
+        } catch PrivilegedHelperError.notInstalled {
+            // Fall through to the direct tool below.
+        } catch {
+            return false
+        }
+
+        let arguments = ["-setdnsservers", iface] + (servers.isEmpty ? ["empty"] : servers)
+        return await Task.detached(priority: .userInitiated) {
+            self.runTool("/usr/sbin/networksetup", arguments) == 0
+        }.value
     }
 
     public func restoreAutomaticDHCP() {

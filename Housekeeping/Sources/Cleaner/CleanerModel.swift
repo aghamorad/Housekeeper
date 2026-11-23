@@ -16,7 +16,7 @@ final class CleanerModel: ObservableObject {
         case working
     }
 
-    /// The one action waiting on a typed confirmation.
+    /// The one action waiting on confirmation.
     enum PendingAction: Equatable {
         case clean
         case uninstall
@@ -201,6 +201,25 @@ final class CleanerModel: ObservableObject {
     func toggleRelated(_ candidate: CleanCandidate) {
         guard phase == .ready, !ProtectionList().isProtected(candidate.url) else { return }
         if !includedRelatedPaths.insert(candidate.id).inserted { includedRelatedPaths.remove(candidate.id) }
+    }
+
+    /// Native list selection for the visible rows: plain click, Command-click,
+    /// Shift-click over a range. Only the current shelf and filter are in the
+    /// order, so a range never reaches a row the reader cannot see.
+    private var selectionAnchorID: String?
+
+    func applySelectionClick(_ candidate: CleanCandidate, order: [String]) {
+        guard phase == .ready, !ProtectionList().isProtected(candidate.url) else { return }
+        var selection = Set(candidates.filter(\.isSelected).map(\.id))
+        RowSelection.apply(
+            id: candidate.id,
+            order: order,
+            selection: &selection,
+            anchor: &selectionAnchorID
+        )
+        for index in candidates.indices {
+            candidates[index].isSelected = selection.contains(candidates[index].id)
+        }
     }
 
     func clearSelection() {

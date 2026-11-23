@@ -48,7 +48,7 @@ struct TrashService {
 
     /// Removes what is in the Trash. This is the one irreversible action in the
     /// app: there is no Quarantine copy afterwards. The caller is responsible
-    /// for having asked, in words, with a typed confirmation.
+    /// for having asked first, in words.
     func empty(progress: @Sendable (Int, Int) -> Void = { _, _ in }) -> EmptyResult {
         guard isTheTrash() else {
             return EmptyResult(failures: ["That is not the Trash folder, so nothing was removed."])

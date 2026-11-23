@@ -1,3 +1,18 @@
+## 2026-11-23 — Housekeeper 0.32.0 (66): One-Time Privileged Helper, Stable Signing, Working VPN Removal, Safe Route Sweeps, Intel AI, Multi-Select
+
+What went into it:
+1. **Privileged helper (`Core/PrivilegedHelper.swift`, `main.swift`)**: the app's own signed binary runs as a launch daemon with `--privileged-helper`, listens on `/var/run/com.housekeeping.helper.sock`, checks the peer uid against `/var/db/com.housekeeping.helper.owner`, and executes a fixed command vocabulary (ping, stopVPN, killPID, removeVPNService, resetNetwork, bootoutLabel, chownUser). No shell strings cross the socket.
+2. **Stable signing (`script/setup_signing_identity.sh`, `script/package_release.sh`, `script/build_and_run.sh`)**: self-signed `Housekeeper Local Signing` identity in `~/Library/Keychains/housekeeper-signing.keychain-db`; packaging uses it when present, ad-hoc otherwise. This is what keeps a Full Disk Access grant across updates.
+3. **VPN removal (`Network/VPNTunnelEngine.swift`)**: `networksetup -removenetworkservice` cannot remove a VPN (it is always the only service on its port). The helper edits `preferences.plist` after matching a Type=VPN entry by name, backs it up, removes it, HUPs configd and verifies the list. Added `forceRestoreInternet()` and a **Fix My Internet Now** button.
+4. **Route Sweep safety (`Routes/RouteEngine.swift`, `UI/RoutesView.swift`, `AppDelegate.swift`)**: guaranteed `ensureTunnelDown` on stop/finish/quit, verification of the tunnel state, automatic network rescue when it will not close, a cleanup banner, and a live "Tunnel up / No tunnel" strip in the header.
+5. **Intel AI (`Core/HardwareProfile.swift`, `Housekeeper/LlamaServer.swift`, `Models/LocalModels.swift`)**: MLX rows are non-loadable on Intel with a plain explanation; llama-server gets `--n-gpu-layers 0`, all cores, and a 240s readiness window.
+6. **Multi-select (`Core/ProcessTerminator.swift`, Background/VPN/Uninstaller/Cleaner rows)**: plain / Command / Shift click via `RowSelection`; Stop Selected in Running Now and VPN Engines.
+7. **DNS (`Network/DNSModels.swift`, `Network/DNSEngine.swift`)**: added Shecan, Begzar, Shelter, Beshkan, Electro Public (194.5.193.5/.6), 403.online, Radar, HostIran, Vanilla, plus Cloudflare Family, Mullvad, NextDNS, Control D, DNS0.eu and Yandex. Each address was queried with `dig @ip example.com A` from this Mac on 2026-11-23; carrier-only private addresses (10.202.10.x, 172.29.x, 10.139.177.x) timed out and say so in their description. `setDNS` was added to the helper (IPv4/IPv6 literal validation, read-back verification) so applying DNS no longer prompts.
+8. **Simplification**: per-app uninstall is one press into Quarantine; Empty Trash no longer requires typing "ok"; Settings has a Permissions section.
+8. **Verification**: typecheck (`-warnings-as-errors`), `audit_ui_controls.py`, `test_safety.sh` (381 assertions), universal build (`52` Mach-Os), installed at `/Applications/Housekeeper.app`.
+
+Open: the helper has not been installed on this Mac yet — installing it needs the user to approve the one-time administrator prompt. Until then every privileged action falls back to the old prompt path.
+
 ## 2026-11-23 — Housekeeper 0.31.0 (65): App Updater Fixes, Native Full Screen, Cartoon Cleaning Mascot, Navigation Moveset & Route Sweep Overhaul
 
 Universal bundle rebuilt (`./script/package_release.sh`), verified (`verify_release.py`), installed at `/Applications/Housekeeper.app`, and pushed to `origin/main` + tag `v0.31.0` on `aghamorad/Housekeeper`.

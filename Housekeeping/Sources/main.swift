@@ -21,6 +21,14 @@
 
 import AppKit
 
+// The privileged helper is this same signed binary with a different job. It is
+// started by launchd as root, answers on a Unix socket, and must never touch
+// AppKit — no window, no Dock icon, no menu bar. Checking before anything else
+// is what keeps a root process from becoming a second copy of the app.
+if CommandLine.arguments.contains("--privileged-helper") {
+    PrivilegedHelperServer.run()
+}
+
 if HousekeepingCLI.wantsCommandLine(Array(CommandLine.arguments.dropFirst())) {
     Task {
         // `run` bounds its own failures and hands back a status rather than

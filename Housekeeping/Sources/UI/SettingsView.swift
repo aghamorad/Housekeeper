@@ -5,6 +5,9 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @ObservedObject private var loginItem = LoginItem.shared
+    @ObservedObject private var helper = PrivilegedHelper.shared
+    @State private var helperNotice: String?
+    @State private var installingHelper = false
     @Environment(\.uiStyle) private var style
     @AppStorage("housekeeping.appearance") private var appearance = "system"
     @AppStorage("housekeeping.showInDock") private var showInDock = true
@@ -89,6 +92,69 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Permissions") {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: helper.isAvailable ? "checkmark.shield.fill" : "key.horizontal.fill")
+                        .foregroundStyle(helper.isAvailable ? .green : style.secondaryText)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(helper.isAvailable ? "One-time helper installed" : "One-time helper not installed")
+                            .font(.headline)
+                        Text(helper.isAvailable
+                             ? "Stopping root VPN services, removing VPN profiles and resetting the network no longer open a password dialog."
+                             : "Without it, every privileged action asks for your administrator password again. Installing it once removes those prompts.")
+                            .font(.callout)
+                            .foregroundStyle(style.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    if helper.isAvailable {
+                        Button("Remove Helper") {
+                            do {
+                                try helper.uninstall()
+                                helperNotice = "The helper was removed. Privileged actions will ask for a password again."
+                            } catch {
+                                helperNotice = error.localizedDescription
+                            }
+                        }
+                    } else {
+                        Button(installingHelper ? "Installing…" : "Set Up Once") {
+                            installingHelper = true
+                            Task {
+                                do {
+                                    try await helper.install()
+                                    helperNotice = "Installed. This Mac will not ask for the administrator password for these actions again."
+                                } catch {
+                                    helperNotice = error.localizedDescription
+                                }
+                                installingHelper = false
+                                helper.refresh()
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(installingHelper)
+                    }
+                }
+
+                if let helperNotice {
+                    Text(helperNotice)
+                        .font(.callout)
+                        .foregroundStyle(style.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button("Open Full Disk Access Settings") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+
+                Text("Housekeeper is signed with a stable local certificate, so a Full Disk Access grant now survives updates. Before this, every new build looked like a different app to macOS and the permission was silently dropped.")
+                    .font(.callout)
+                    .foregroundStyle(style.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .onAppear { helper.refresh() }
+
             Section("Scanning") {
                 Toggle("Also look in folders that belong to no app", isOn: Binding(
                     get: { appState.deepSweep },
@@ -96,7 +162,7 @@ struct SettingsView: View {
                 ))
 
                 Text(appState.deepSweep
-                     ? "On. Housekeeping checks the folders it knows an app owns, and also opens the folders that belong to no app — usually where missing space is hiding, because nothing else reports it. A scan takes about a minute longer. Anything found that way is only listed: you tick it, then type a word to confirm."
+                     ? "On. Housekeeping checks the folders it knows an app owns, and also opens the folders that belong to no app — usually where missing space is hiding, because nothing else reports it. A scan takes about a minute longer. Anything found that way is only listed: you tick it, then confirm once."
                      : "Off. Housekeeping only checks the folders it knows an app owns, so a scan stays quick — but space inside other folders won't show up in the results.")
                     .font(.callout)
                     .foregroundStyle(style.secondaryText)
@@ -274,7 +340,7 @@ struct SettingsView: View {
         facts.append("These are Housekeeping's settings. Model downloads and removals change only Housekeeping's managed model files after the reader chooses those actions. Other settings control the app's appearance and behavior; they do not clean personal files.")
         facts.append("Theme: \(appState.currentTheme.displayName). \(themeDescription)")
         facts.append(appState.deepSweep
-                     ? "It also looks in the folders that belong to no app, not just the folders it knows an app owns. That is usually where the missing space is, and it is why a scan takes about a minute longer. Anything found that way is only listed: you tick it, then type a word to confirm."
+                     ? "It also looks in the folders that belong to no app, not just the folders it knows an app owns. That is usually where the missing space is, and it is why a scan takes about a minute longer. Anything found that way is only listed: you tick it, then confirm once."
                      : "It only looks in the folders it knows an app owns. Everything else is left alone, so a scan stays quick — and space inside those other folders will not appear in the results.")
         facts.append("The safety promises are: Housekeeping never ticks anything on the reader's behalf; cleaning moves items into Quarantine and deletes nothing, and everything moved can be put back; and anything it cannot prove is replaceable is shown but locked, with the reason stated.")
         facts.append("Quarantine is at \(CleanupEngine().quarantineURL.path), a normal folder in plain sight at the top of the home folder\(CleanupEngine().quarantineExists ? "" : " — it does not exist yet because nothing has been quarantined, and it is created the first time something is")")
