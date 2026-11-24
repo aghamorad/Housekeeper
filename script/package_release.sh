@@ -21,7 +21,7 @@ MIN_MACOS="13.0"
 # why the app used to start asking for permissions again after each update.
 SIGNING_IDENTITY=""
 SIGNING_KEYCHAIN="$HOME/Library/Keychains/housekeeper-signing.keychain-db"
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "Housekeeper Local Signing"; then
+if security find-identity -v -p codesigning "$SIGNING_KEYCHAIN" 2>/dev/null | grep -q "Housekeeper Local Signing"; then
   SIGNING_IDENTITY="Housekeeper Local Signing"
 fi
 # An unlocked keychain is the difference between a build and a password dialog.

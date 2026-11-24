@@ -19,6 +19,7 @@
 
 import Foundation
 import Darwin
+import Security
 
 // MARK: - Wire types
 
@@ -84,6 +85,18 @@ final class PrivilegedHelper: ObservableObject {
     nonisolated static let socketPath = "/var/run/com.housekeeping.helper.sock"
     nonisolated static let ownerPath = "/var/db/com.housekeeping.helper.owner"
 
+    /// Root's own copy of the helper. It must not live inside the app bundle:
+    /// `/Applications/Housekeeper.app` belongs to the logged-in user, so a daemon
+    /// pointed at it would let anything running as that user replace the binary
+    /// and inherit root at the next login.
+    nonisolated static let helperBinaryPath = "/Library/PrivilegedHelperTools/com.housekeeping.helper"
+
+    /// The code-signing requirement of the app that is allowed to talk to the
+    /// helper, written by root at install time. Checking the caller's signature
+    /// is what stops any other program running as the same user from borrowing
+    /// root through the socket.
+    nonisolated static let clientRequirementPath = "/var/db/com.housekeeping.helper.clientreq"
+
     /// Last known reachability. Refreshed by `refresh()`; callers that need a
     /// privileged operation should try it and fall back, not gate on this.
     @Published private(set) var isAvailable = false
@@ -93,8 +106,22 @@ final class PrivilegedHelper: ObservableObject {
     private init() {}
 
     var isInstalled: Bool {
-        FileManager.default.fileExists(atPath: Self.daemonPlistPath)
-            && FileManager.default.fileExists(atPath: Self.ownerPath)
+        guard FileManager.default.fileExists(atPath: Self.daemonPlistPath),
+              FileManager.default.fileExists(atPath: Self.ownerPath),
+              FileManager.default.fileExists(atPath: Self.helperBinaryPath),
+              let data = FileManager.default.contents(atPath: Self.daemonPlistPath),
+              let text = String(data: data, encoding: .utf8) else { return false }
+        return text.contains(Self.helperBinaryPath)
+    }
+
+    /// True when an older build installed the helper inside the app bundle. That
+    /// layout is the hole this version closes; the app reports it and offers the
+    /// one-time setup again instead of using it.
+    var isLegacyInstall: Bool {
+        guard FileManager.default.fileExists(atPath: Self.daemonPlistPath),
+              let data = FileManager.default.contents(atPath: Self.daemonPlistPath),
+              let text = String(data: data, encoding: .utf8) else { return false }
+        return !text.contains(Self.helperBinaryPath)
     }
 
     func refresh() {
@@ -112,6 +139,33 @@ final class PrivilegedHelper: ObservableObject {
         return reply
     }
 
+    /// Reads the app's own designated requirement. `codesign -d -r-` prints the
+    /// stable rule macOS uses to recognise this exact app across rebuilds.
+    nonisolated static func designatedRequirement(forApp url: URL) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        process.arguments = ["-d", "-r-", url.path]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        for line in text.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("designated =>") else { continue }
+            let value = trimmed.dropFirst("designated =>".count)
+                .trimmingCharacters(in: .whitespaces)
+            return value.isEmpty ? nil : value
+        }
+        return nil
+    }
+
     /// Installs the daemon. One administrator prompt, once per Mac — not once
     /// per action.
     func install() async throws {
@@ -125,6 +179,13 @@ final class PrivilegedHelper: ObservableObject {
         defer { isInstalling = false }
 
         let uid = String(getuid())
+        guard let requirement = Self.designatedRequirement(forApp: Bundle.main.bundleURL) else {
+            throw PrivilegedHelperError.installFailed(
+                "Housekeeper could not read its own code signature, so the helper would not know which app to trust. Reinstall Housekeeper from its GitHub release, then set the helper up again."
+            )
+        }
+        let encodedRequirement = Data(requirement.utf8).base64EncodedString()
+
         let plist = """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -133,7 +194,7 @@ final class PrivilegedHelper: ObservableObject {
             <key>Label</key><string>\(Self.launchdLabel)</string>
             <key>ProgramArguments</key>
             <array>
-                <string>\(executable)</string>
+                <string>\(Self.helperBinaryPath)</string>
                 <string>--privileged-helper</string>
             </array>
             <key>RunAtLoad</key><true/>
@@ -149,6 +210,9 @@ final class PrivilegedHelper: ObservableObject {
         let script = """
         #!/bin/bash
         set -e
+        /bin/launchctl bootout system/\(Self.launchdLabel) >/dev/null 2>&1 || true
+        /bin/mkdir -p "/Library/PrivilegedHelperTools"
+        /usr/bin/install -o root -g wheel -m 755 "\(executable)" "\(Self.helperBinaryPath)"
         /bin/cat > "\(Self.daemonPlistPath)" <<'HOUSEKEEPER_PLIST'
         \(plist)
         HOUSEKEEPER_PLIST
@@ -157,7 +221,9 @@ final class PrivilegedHelper: ObservableObject {
         /bin/echo \(uid) > "\(Self.ownerPath)"
         /usr/sbin/chown root:wheel "\(Self.ownerPath)"
         /bin/chmod 600 "\(Self.ownerPath)"
-        /bin/launchctl bootout system/\(Self.launchdLabel) >/dev/null 2>&1 || true
+        /bin/echo \(encodedRequirement) | /usr/bin/base64 -D > "\(Self.clientRequirementPath)"
+        /usr/sbin/chown root:wheel "\(Self.clientRequirementPath)"
+        /bin/chmod 600 "\(Self.clientRequirementPath)"
         /bin/launchctl bootstrap system "\(Self.daemonPlistPath)"
         /bin/launchctl enable system/\(Self.launchdLabel) >/dev/null 2>&1 || true
         """
@@ -202,7 +268,7 @@ final class PrivilegedHelper: ObservableObject {
         let script = """
         #!/bin/bash
         /bin/launchctl bootout system/\( Self.launchdLabel) >/dev/null 2>&1 || true
-        /bin/rm -f "\(Self.daemonPlistPath)" "\(Self.ownerPath)" "\(Self.socketPath)"
+        /bin/rm -f "\(Self.daemonPlistPath)" "\(Self.ownerPath)" "\(Self.socketPath)" "\(Self.helperBinaryPath)" "\(Self.clientRequirementPath)"
         """
         let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent("housekeeper-helper-remove-\(UUID().uuidString).sh")
@@ -294,7 +360,10 @@ enum PrivilegedHelperServer {
             }
         }
         guard bound == 0 else { exit(5) }
-        chmod(PrivilegedHelper.socketPath, 0o666)
+        chmod(PrivilegedHelper.socketPath, 0o660)
+        if let group = getgrnam("staff") {
+            chown(PrivilegedHelper.socketPath, 0, group.pointee.gr_gid)
+        }
         guard listen(fd, 16) == 0 else { exit(6) }
 
         log("helper started on \(PrivilegedHelper.socketPath)")
@@ -321,6 +390,11 @@ enum PrivilegedHelperServer {
             log("refused uid \(uid) (owner \(ownerUID()))")
             return
         }
+        guard callerIsHousekeeper(client) else {
+            reply(client, ok: false, "This helper only answers the Housekeeper app that installed it.")
+            log("refused a caller that is not signed as Housekeeper")
+            return
+        }
 
         var buffer = Data()
         var chunk = [UInt8](repeating: 0, count: 4096)
@@ -344,6 +418,37 @@ enum PrivilegedHelperServer {
             return 501
         }
         return value
+    }
+
+    /// Read once. The file is root-owned, so only root can widen who may call.
+    private static let allowedClient: SecRequirement? = {
+        guard let text = try? String(contentsOfFile: PrivilegedHelper.clientRequirementPath,
+                                      encoding: .utf8) else { return nil }
+        var requirement: SecRequirement?
+        guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess else {
+            return nil
+        }
+        return requirement
+    }()
+
+    /// Confirms that the process on the other end is the signed Housekeeper app,
+    /// not merely something running as the same user.
+    private static func callerIsHousekeeper(_ client: Int32) -> Bool {
+        guard let requirement = allowedClient else { return false }
+
+        // Darwin exposes the peer's process id on a Unix socket.
+        var pid = pid_t(0)
+        var length = socklen_t(MemoryLayout<pid_t>.size)
+        let localPeerPID: Int32 = 0x002
+        guard getsockopt(client, 0, localPeerPID, &pid, &length) == 0, pid > 0 else {
+            return false
+        }
+
+        let attributes = [kSecGuestAttributePid as String: NSNumber(value: pid)] as CFDictionary
+        var code: SecCode?
+        guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess,
+              let code else { return false }
+        return SecCodeCheckValidity(code, [], requirement) == errSecSuccess
     }
 
     // MARK: Operations

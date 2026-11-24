@@ -188,7 +188,7 @@ struct HousekeepingApp: App {
                     appState.showUninstaller = true
                 }
 
-                Button("Repair Damaged App…") {
+                Button("Open a Downloaded App…") {
                     appState.showAppRepair = true
                 }
 

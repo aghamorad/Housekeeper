@@ -487,10 +487,10 @@ struct UpdateView: View {
                 if path.hasSuffix(".app") {
                     Button {
                         Task {
-                            _ = await AppRepairEngine.shared.repair(url: URL(fileURLWithPath: path))
+                            await AppRepairEngine.shared.clearDownloadFlag(url: URL(fileURLWithPath: path))
                         }
                     } label: {
-                        Label("Repair Gatekeeper / 'Damaged' Error", systemImage: "bandage")
+                        Label("Clear Download Flag", systemImage: "checkmark.shield")
                     }
                 }
             }

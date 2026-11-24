@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var showAdvancedTools: Bool = false
     @State private var showQuickJump: Bool = false
     @State private var quickJumpQuery: String = ""
+    @State private var showLegacyHelperAlert = false
 
 
     /// The view a sheet shows, one screen per case. Each is given the
@@ -124,6 +125,17 @@ struct ContentView: View {
             // can still be clicked, and it will build this view again to talk to.
             .onAppear {
                 WindowOpener.shared.register { openWindow(id: "main") }
+                if PrivilegedHelper.shared.isLegacyInstall {
+                    showLegacyHelperAlert = true
+                }
+            }
+            .alert("Replace the old root helper?", isPresented: $showLegacyHelperAlert) {
+                Button("Replace It Now") {
+                    Task { try? await PrivilegedHelper.shared.install() }
+                }
+                Button("Later", role: .cancel) {}
+            } message: {
+                Text("The previous version installed a background helper inside the app folder, which your own account can modify. This version moves it to a system folder that only the system can write to, and checks that the program calling it is Housekeeper's signed app. One administrator password is needed, once.")
             }
             .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenQuickJump)) { _ in
                 quickJumpQuery = ""
@@ -176,7 +188,7 @@ struct ContentView: View {
         case .localModels: return "Manage local MLX and Ollama models"
         case .fanControl: return "Live thermal sensors and cooling"
         case .uninstaller: return "Remove apps along with leftover files"
-        case .appRepair: return "Clear Gatekeeper & damaged app blocks"
+        case .appRepair: return "Clear a download flag, nothing else"
         case .batteryHealth: return "Cycle count, wear, and sleep drain"
         case .vpnTunnels: return "Inspect active utun tunnels and services"
         case .dnsSwitcher: return "1-click DNS presets and reset"
@@ -1204,10 +1216,10 @@ private struct JobBar: View {
 
             Job(
                 id: "repair-damaged-app",
-                title: "Repair Damaged App",
-                systemImage: "bandage.fill",
+                title: "Open a Downloaded App",
+                systemImage: "checkmark.shield.fill",
                 zone: .app,
-                help: "Clears the download flag on a downloaded app so macOS stops asking. It never changes the app's signature.",
+                help: "Drag an app in to clear the download flag macOS puts on files from the internet. It changes nothing else — the signature and contents stay as the developer shipped them.",
                 action: { appState.showAppRepair = true }
             ),
 

@@ -3,6 +3,23 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 BUILD_DIR="$ROOT_DIR/.build/safety-tests"
+
+# Permanent guards, checked before anything else. The earlier copy of the first
+# check lived in the "Xcode missing" branch and therefore never ran on a Mac
+# that has Xcode.
+if grep -Rq --include="*.swift" -e 'codesign.*--force' -e 'codesign.*--sign' -e 'spctl.*master-disable' \
+     "$ROOT_DIR/Housekeeping/Sources"; then
+  echo "FAIL: a source file can still re-sign applications or disable Gatekeeper." >&2
+  exit 1
+fi
+if grep -Rq --include="*.swift" -e 'xattr.*"-c"' "$ROOT_DIR/Housekeeping/Sources"; then
+  echo "FAIL: a source file can still strip every extended attribute." >&2
+  exit 1
+fi
+if grep -q '<string>\\(executable)</string>' "$ROOT_DIR/Housekeeping/Sources/Core/PrivilegedHelper.swift"; then
+  echo "FAIL: the launch daemon points inside the app bundle." >&2
+  exit 1
+fi
 if [[ -d "${XCODE_APP:-/Applications/Xcode.app}" ]]; then
   XCODE_APP="${XCODE_APP:-/Applications/Xcode.app}"
 elif [[ -d "/Applications/Xcode-beta.app" ]]; then
