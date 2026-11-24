@@ -1,3 +1,47 @@
+## 2026-11-24 — Housekeeper 0.32.3 (69): root-helper hole closed, App Repair reduced to a drop zone
+
+**What was wrong.** 0.32.0 installed `/Library/LaunchDaemons/com.housekeeping.helper.plist`
+pointing at `/Applications/Housekeeper.app/Contents/MacOS/Housekeeper --privileged-helper`.
+That bundle is owned by `morad`, so any process running as him could replace the binary
+and inherit root at the next boot. The socket was `0666`, and the helper checked only the
+caller's uid, so any of his processes could ask root to kill a PID or change DNS.
+
+**Fix, all in `PrivilegedHelper.swift`:**
+- The helper binary is copied to `/Library/PrivilegedHelperTools/com.housekeeping.helper`,
+  `root:wheel`, mode 755, and the daemon points there.
+- Setup writes the app's designated requirement to
+  `/var/db/com.housekeeping.helper.clientreq` (root:wheel 600). The helper reads it once
+  and runs `SecCodeCopyGuestWithAttributes` + `SecCodeCheckValidity` on the peer PID
+  (`LOCAL_PEERPID`), so the caller must be the signed app, not merely the same user.
+- Socket mode is `0660`, group `staff`, instead of `0666`.
+- `isInstalled` requires the new binary and the new plist path; `isLegacyInstall` detects
+  a 0.32.0 layout. ContentView shows a one-time alert ("Replace the old root helper?")
+  whose button calls `install()`.
+- `uninstall()` removes the helper binary and the requirement file too.
+
+**App Repair is now one job.** `AppRepairEngine` only runs `xattr -r -d com.apple.quarantine`
+on the dropped bundle. `AppRepairView` is a single drop zone; the scan list, signature
+diagnosis, multi-select and Gatekeeper button are deleted. Labels in the menu, quick jump
+and UpdateView context menu now say "Open a Downloaded App" / "Clear Download Flag".
+
+**Two build repairs found on the way:**
+- `Housekeeping.xcodeproj` was missing 15 source files (the release path compiles with
+  `swiftc`, so packaging worked while `xcodebuild` could not clean-build). Added.
+- `script/test_safety.sh` had its no-re-signing guard inside the "Xcode missing" branch,
+  so it never ran. Moved to the top, extended with an xattr guard and a guard that the
+  daemon path is not inside the app bundle.
+- `script/package_release.sh` now looks for the signing identity in the Housekeeper
+  keychain explicitly; removing that keychain from the login search list (a separate
+  cleanup) had silently made builds ad-hoc.
+
+**Verified:** 381 safety assertions pass; universal build signs as
+`Authority=Housekeeper Local Signing` with designated requirement
+`identifier "com.housekeeping.app" and certificate root = H"b42a…"`; installed
+`/Applications/Housekeeper.app` 0.32.3; the migration alert appears on launch (read from
+the AX tree). Committed `864ba70`, release `v0.32.3`. The privileged half still needs
+Morad's one password entry in that alert; until he presses it, the old root daemon (pid
+634) keeps running from the replaced bundle.
+
 ## 2026-11-24 — Housekeeper 0.32.2 (68): Spoof Location actually works again
 
 **Symptom**: pressing a place on *Mammad's iPhone* (iPhone 18,1, iOS 27.2.1) ended in
