@@ -62,10 +62,6 @@ struct OverviewView: View {
                     OverviewToolRow(title: "Uninstall Apps", detail: "Remove applications along with their leftover support files.", icon: "xmark.app") {
                         appState.showUninstaller = true
                     }
-                    Divider().padding(.leading, 44)
-                    OverviewToolRow(title: "Fix Permissions", detail: "Audit root-owned dotfiles, dead proxies, and broken launch agents.", icon: "cross.case") {
-                        appState.showPermissionsDoctor = true
-                    }
                 }
 
                 groupedSection(title: "Network & Speed") {

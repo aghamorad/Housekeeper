@@ -1,3 +1,43 @@
+## 2026-11-25 — Housekeeper 0.33.0 (70): Fix Permissions deleted, icon made full-bleed
+
+**Why.** Morad asked for two specific things after 0.32.3: the "Fix Permissions" option was
+still in the app even though running it is what damaged this Mac, and the Dock icon still
+showed a pale box behind the artwork.
+
+**Fix Permissions is removed, not hidden.** Deleted `PermissionsDoctorView.swift` and
+`PermissionsDoctorEngine.swift` (both in the Trash, both recoverable from git). Every entry
+point went with them: `AppState.Screen.permissionsDoctor` and `showPermissionsDoctor`, the
+view switch, the `allJobs` entry `fix-permissions`, its sidebar row, the quick-jump
+destination, the window title/subtitle cases, the menu identifier, the `onReceive` for
+`HousekeepingOpenPermissionsDoctor`, and that notification name in `StatusItemController`.
+Both files were also stripped from `Housekeeping.xcodeproj/project.pbxproj` (8 lines;
+`plutil -lint` passes). `grep -ri permissionsDoctor` over `Sources/` is now empty.
+
+**The icon box was the system, not the artwork.** `AppIcon.png` was a glass tile drawn with
+transparent margins (opaque bbox `30,25 → 996,995`). From macOS 26 on, an icon with
+transparent margins is composited onto the system's own pale plate at roughly 80% — that
+plate is the "box". Verified by A/B: a copy of the app with a full-bleed icns rendered
+edge-to-edge in the Dock while the shipped one sat inside the plate.
+
+**New artwork.** The 1024 tile is scaled 1.10 and centre-cropped so its edges run past the
+canvas (`AppIcon.png`, opaque), and `AppIcon.icns` is regenerated from it with `iconutil`
+(all 16–512 @1x/@2x entries). The originals are in the Trash as `AppIcon.pre-bleed.*`.
+No `Assets.car`/`.icon` (Icon Composer) work was needed: full-bleed `.icns` is enough on
+macOS 27.2.1.
+
+**Verified.** `script/test_safety.sh` — 381 assertions pass. Universal (x86_64 + arm64),
+signed `Authority=Housekeeper Local Signing`, designated requirement unchanged
+(`certificate root = H"b42a…"`), so the Full Disk Access grant survives. Installed to
+`/Applications/Housekeeper.app` as 0.33.0 (70); `dist/Housekeeper-macOS-universal.zip`
+sha256 `216d964a4f05c2eb0f5dffc117a228be100ae4a49a3f78da869aad60a04c0c90`.
+
+**Still running old code:** three `Housekeeper mcp` processes (ppid 1179, a Hermes tool
+process) were left alone deliberately — they keep the 0.32.3 binary in memory until Hermes
+restarts them. Nothing was killed.
+
+**Next.** Confirm the Dock icon after the next relaunch; if macOS serves a cached thumbnail,
+`killall Dock` once.
+
 ## 2026-11-24 — Housekeeper 0.32.3 (69): root-helper hole closed, App Repair reduced to a drop zone
 
 **What was wrong.** 0.32.0 installed `/Library/LaunchDaemons/com.housekeeping.helper.plist`

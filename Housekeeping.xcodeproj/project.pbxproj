@@ -168,7 +168,6 @@
 		F1000202 /* PrivilegedHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2000202 /* PrivilegedHelper.swift */; };
 		F1000203 /* ProcessTerminator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2000203 /* ProcessTerminator.swift */; };
 		F1000204 /* RowSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2000204 /* RowSelection.swift */; };
-		F1000205 /* PermissionsDoctorEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2000205 /* PermissionsDoctorEngine.swift */; };
 		F1000206 /* BackgroundActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2000206 /* BackgroundActivity.swift */; };
 		F1000207 /* BackgroundReview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2000207 /* BackgroundReview.swift */; };
 		F1000208 /* BackgroundWidgetControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2000208 /* BackgroundWidgetControl.swift */; };
@@ -177,7 +176,6 @@
 		F100020B /* BackgroundActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F200020B /* BackgroundActivityView.swift */; };
 		F100020C /* BackgroundReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F200020C /* BackgroundReviewView.swift */; };
 		F100020D /* HousekeeperScanningBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = F200020D /* HousekeeperScanningBanner.swift */; };
-		F100020E /* PermissionsDoctorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F200020E /* PermissionsDoctorView.swift */; };
 		F100020F /* SpeedTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F200020F /* SpeedTestView.swift */; };
 /* End PBXBuildFile section */
 
@@ -345,7 +343,6 @@
 		F2000202 /* PrivilegedHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Core/PrivilegedHelper.swift; sourceTree = "<group>"; };
 		F2000203 /* ProcessTerminator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Core/ProcessTerminator.swift; sourceTree = "<group>"; };
 		F2000204 /* RowSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Core/RowSelection.swift; sourceTree = "<group>"; };
-		F2000205 /* PermissionsDoctorEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Environment/PermissionsDoctorEngine.swift; sourceTree = "<group>"; };
 		F2000206 /* BackgroundActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Network/BackgroundActivity.swift; sourceTree = "<group>"; };
 		F2000207 /* BackgroundReview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Network/BackgroundReview.swift; sourceTree = "<group>"; };
 		F2000208 /* BackgroundWidgetControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Network/BackgroundWidgetControl.swift; sourceTree = "<group>"; };
@@ -354,7 +351,6 @@
 		F200020B /* BackgroundActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/UI/BackgroundActivityView.swift; sourceTree = "<group>"; };
 		F200020C /* BackgroundReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/UI/BackgroundReviewView.swift; sourceTree = "<group>"; };
 		F200020D /* HousekeeperScanningBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/UI/HousekeeperScanningBanner.swift; sourceTree = "<group>"; };
-		F200020E /* PermissionsDoctorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/UI/PermissionsDoctorView.swift; sourceTree = "<group>"; };
 		F200020F /* SpeedTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/UI/SpeedTestView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -384,7 +380,6 @@
 				F2000202,
 				F2000203,
 				F2000204,
-				F2000205,
 				F2000206,
 				F2000207,
 				F2000208,
@@ -393,7 +388,6 @@
 				F200020B,
 				F200020C,
 				F200020D,
-				F200020E,
 				F200020F,
 				F2000016,
 				F2000015,
@@ -615,7 +609,6 @@
 				F1000202,
 				F1000203,
 				F1000204,
-				F1000205,
 				F1000206,
 				F1000207,
 				F1000208,
@@ -624,7 +617,6 @@
 				F100020B,
 				F100020C,
 				F100020D,
-				F100020E,
 				F100020F,
 				F1000016,
 				F1000015,

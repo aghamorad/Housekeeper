@@ -1,3 +1,26 @@
+## 0.33.0 — Fix Permissions is gone, and the icon fills its square
+
+Two things Morad asked for by name, both visible the moment the window opens.
+
+- **Fix Permissions (the Permissions Doctor) is deleted, not hidden.** It rewrote ownership
+  across root-owned dotfiles, config folders and launch agents — the widest-blast-radius
+  job in the app, and the one that damaged this Mac the first time it ran. A safety screen
+  that can wreck the thing it is inspecting does not belong behind a single click.
+  `PermissionsDoctorView.swift` and `PermissionsDoctorEngine.swift` are removed; so is every
+  way in: the dashboard row, the sidebar entry, the quick-jump destination, the job list,
+  the window title and subtitle, the menu identifier, and the `HousekeepingOpenPermissionsDoctor`
+  notification the window used to listen for.
+
+- **The icon no longer sits inside a box.** The supplied artwork was a liquid-glass tile
+  drawn on a transparent canvas. From macOS 26 onward, an app icon with transparent margins
+  is composited by the system onto its own light plate at roughly 80% scale — that plate is
+  the box Morad kept seeing, and no amount of editing the artwork's own border removed it.
+  The art is now full-bleed: the glass tile is scaled so its edges run past the canvas, and
+  `AppIcon.icns`/`AppIcon.png` are regenerated from that. The system's squircle is the only
+  shape left, so the tile fills the icon exactly as drawn.
+
+Nothing else changed. The old icons are in the Trash beside this build.
+
 ## 0.32.2 — Spoof Location: say what the phone actually needs, and mount the image for it
 
 The screen failed with `Failed to start service. Possible reasons are:` followed by five

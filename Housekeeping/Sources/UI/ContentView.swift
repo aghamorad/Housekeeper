@@ -51,7 +51,6 @@ struct ContentView: View {
             case .backgroundActivity: BackgroundActivityView()
             case .dnsSwitcher: DNSConfigView()
             case .speedTest: SpeedTestView()
-            case .permissionsDoctor: PermissionsDoctorView()
             }
         }
         .environment(\.uiStyle, style)
@@ -167,7 +166,6 @@ struct ContentView: View {
         case .dnsSwitcher: return "DNS Switcher"
         case .speedTest: return "Speed Test"
         case .backgroundActivity: return "Background Activity"
-        case .permissionsDoctor: return "Fix Permissions"
         default: return "Housekeeper"
         }
     }
@@ -194,7 +192,6 @@ struct ContentView: View {
         case .dnsSwitcher: return "1-click DNS presets and reset"
         case .speedTest: return "Download, upload, ping, and jitter"
         case .backgroundActivity: return "Inspect running tasks and login items"
-        case .permissionsDoctor: return "1-click repairs for permissions & proxies"
         default: return ""
         }
     }
@@ -224,9 +221,6 @@ struct ContentView: View {
             },
             QuickJumpDestination(id: "quarantine", title: "Quarantine", subtitle: "Restore moved files anytime", icon: "archivebox", keywords: "restore undo backup") {
                 appState.showQuarantineManagement = true
-            },
-            QuickJumpDestination(id: "permissions", title: "Fix Permissions (Doctor)", subtitle: "Repair dotfiles, proxies & broken agents", icon: "cross.case.fill", keywords: "doctor repair permissions proxy") {
-                appState.showPermissionsDoctor = true
             },
             QuickJumpDestination(id: "speed", title: "Speed Test", subtitle: "Measure download, upload & ping", icon: "speedometer", keywords: "internet speed mbps ping") {
                 appState.showSpeedTest = true
@@ -336,9 +330,6 @@ private struct ToolNotificationsModifier: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenRouteSweep)) { _ in
                 appState.showRoutes = true
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenPermissionsDoctor)) { _ in
-                appState.showPermissionsDoctor = true
             }
     }
 }
@@ -797,9 +788,6 @@ private struct JobBar: View {
                         if let job = allJobs.first(where: { $0.id == "clean" }) {
                             sidebarJob(job, customTitle: "Clean Up", customIcon: "sparkles")
                         }
-                        if let job = allJobs.first(where: { $0.id == "fix-permissions" }) {
-                            sidebarJob(job, customTitle: "Fix Permissions (Doctor)", customIcon: "cross.case.fill")
-                        }
                         if let job = allJobs.first(where: { $0.id == "uninstaller" }) {
                             sidebarJob(job, customTitle: "Uninstall Apps", customIcon: "xmark.app")
                         }
@@ -1005,7 +993,6 @@ private struct JobBar: View {
         case .backgroundActivity: return "background-activity"
         case .dnsSwitcher: return "dns-switcher"
         case .speedTest: return "speed-test"
-        case .permissionsDoctor: return "fix-permissions"
         default: return nil
         }
     }
@@ -1221,15 +1208,6 @@ private struct JobBar: View {
                 zone: .app,
                 help: "Drag an app in to clear the download flag macOS puts on files from the internet. It changes nothing else — the signature and contents stay as the developer shipped them.",
                 action: { appState.showAppRepair = true }
-            ),
-
-            Job(
-                id: "fix-permissions",
-                title: "Fix Permissions (Doctor)",
-                systemImage: "cross.case.fill",
-                zone: .app,
-                help: "Doctor diagnostics for file permissions, root-owned config folders, broken network proxies, Gatekeeper quarantine, and startup daemons.",
-                action: { appState.showPermissionsDoctor = true }
             ),
 
             Job(
