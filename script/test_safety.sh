@@ -8,7 +8,16 @@ if [[ -d "${XCODE_APP:-/Applications/Xcode.app}" ]]; then
 elif [[ -d "/Applications/Xcode-beta.app" ]]; then
   XCODE_APP="/Applications/Xcode-beta.app"
 else
-  echo "Housekeeping safety tests require Xcode.app or Xcode-beta.app in /Applications." >&2
+  # Housekeeper must never rewrite another app's code signature. Doing so broke
+# Google Chrome in 0.32.0: Chrome checks its own seal and refuses to start when
+# it has been replaced. It must also never disable Gatekeeper for the whole Mac.
+if grep -Rq --include="*.swift" -e 'codesign.*--force' -e 'codesign.*--sign' -e 'spctl.*master-disable' \
+     "$ROOT_DIR/Housekeeping/Sources"; then
+  echo "FAIL: a source file can still re-sign applications or disable Gatekeeper." >&2
+  exit 1
+fi
+
+echo "Housekeeping safety tests require Xcode.app or Xcode-beta.app in /Applications." >&2
   exit 1
 fi
 SWIFTC="$XCODE_APP/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"

@@ -20,12 +20,21 @@ MIN_MACOS="13.0"
 # on every build and takes the reader's Full Disk Access grant with it, which is
 # why the app used to start asking for permissions again after each update.
 SIGNING_IDENTITY=""
+SIGNING_KEYCHAIN="$HOME/Library/Keychains/housekeeper-signing.keychain-db"
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "Housekeeper Local Signing"; then
   SIGNING_IDENTITY="Housekeeper Local Signing"
 fi
+# An unlocked keychain is the difference between a build and a password dialog.
+# This keychain exists only for this certificate; unlocking it is local and
+# unattended, and it is what stops codesign from putting a SecurityAgent prompt
+# in front of whoever happens to be using the Mac.
+if [[ -n "$SIGNING_IDENTITY" && -f "$SIGNING_KEYCHAIN" ]]; then
+  security unlock-keychain -p "${HOUSEKEEPER_SIGNING_PASSWORD:-}" "$SIGNING_KEYCHAIN" >/dev/null 2>&1 || true
+  security set-keychain-settings -t 3600 "$SIGNING_KEYCHAIN" >/dev/null 2>&1 || true
+fi
 sign() {
   if [[ -n "$SIGNING_IDENTITY" ]]; then
-    codesign --force --sign "$SIGNING_IDENTITY" "$@"
+    codesign --force --keychain "$SIGNING_KEYCHAIN" --sign "$SIGNING_IDENTITY" "$@"
   else
     codesign --force --sign - "$@"
   fi
@@ -198,8 +207,9 @@ stage() {
   python3 "$ROOT_DIR/script/verify_universal_bundle.py" "$app"
 }
 
-echo "Building macOS AppIcon.icns from definitive Housekeeping/Resources/AppIcon.png..."
-bash "$ROOT_DIR/script/generate_app_icon.sh" "$WORK_ROOT/generated-icon"
+echo "Using the definitive liquid-glass AppIcon.icns exactly as supplied…"
+mkdir -p "$WORK_ROOT/generated-icon"
+cp "$ROOT_DIR/Housekeeping/Resources/AppIcon.icns" "$WORK_ROOT/generated-icon/AppIcon.icns"
 
 echo "Compiling for Apple silicon (arm64)..."
 compile arm64 "$WORK_ROOT/$APP_NAME-arm64"

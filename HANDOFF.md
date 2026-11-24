@@ -1,3 +1,23 @@
+## 2026-11-24 — Housekeeper 0.32.1 (67): Emergency removal of the app re-signing bug
+
+0.32.0's Repair screen ran `codesign --force --deep --sign -` and `xattr -r -c` on apps, plus a `spctl --master-disable` button. On 2026-11-24 15:27–15:28 it re-signed 65 bundles in `/Applications`; Chrome then refused to start because its own seal was gone.
+
+Removed in 0.32.1:
+- all `codesign` write paths in `AppRepairEngine.swift`; only read-only `codesign --verify` remains;
+- `xattr -r -c` and `com.apple.provenance` stripping; repair now runs exactly `xattr -r -d com.apple.quarantine`;
+- `enableGatekeeperAnywhere()` and the **Allow Anywhere** button;
+- provenance from scan criteria (it made every downloaded app look broken);
+- provenance removal in `PermissionsDoctorEngine`.
+
+Added:
+- the definitive supplied icon, copied byte for byte (`AppIcon.icns` checksum matches `/Users/Morad/Desktop/AppIcon.icns`); `generate_app_icon.sh` no longer resamples or wraps it;
+- a destructive button style (filled red) and decluttered Clean Up / Quarantine action bars; the repair screen and its sidebar entry are renamed **Open a Downloaded App**;
+- honest signature reporting in the repair screen (checks with `codesign --verify`, never changes it);
+- `script/test_safety.sh` guard that fails the suite if any source can re-sign apps or disable Gatekeeper;
+- password-free signing keychain (`housekeeper-signing`, empty password) and automatic unlock in `package_release.sh`, so unattended builds never show a SecurityAgent prompt. Same certificate fingerprint, so the Full Disk Access grant stays valid.
+
+Recovery: `~/Desktop/Housekeeper — signature recovery.md` lists the 65 affected bundles and the route for each (Google installer for Chrome/Chrome Beta, `brew reinstall --cask` for LibreOffice/Phosphor, in-app updater for the rest).
+
 ## 2026-11-23 — Housekeeper 0.32.0 (66): One-Time Privileged Helper, Stable Signing, Working VPN Removal, Safe Route Sweeps, Intel AI, Multi-Select
 
 What went into it:

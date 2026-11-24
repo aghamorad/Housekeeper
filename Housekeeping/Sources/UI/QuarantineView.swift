@@ -630,10 +630,8 @@ struct QuarantineView: View {
             TextField("Find quarantined items by app, path or category", text: $search)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityLabel("Filter quarantined items")
-            Text("Changing the search deselects items it hides, so batch actions affect only visible choices.")
-                .font(style.smallFont)
-                .foregroundColor(style.secondaryText)
-            HStack {
+
+            HStack(spacing: 10) {
                 ThemeButton(title: "Select All Shown", systemImage: "checkmark.circle", isEnabled: !visibleEntries.isEmpty) {
                     selectedIDs.formUnion(visibleEntries.map(\.id))
                 }
@@ -641,23 +639,46 @@ struct QuarantineView: View {
                 Spacer()
                 Text("\(visibleEntries.count) shown · \(selectedEntries.count) selected · \(selectedEntries.reduce(Int64(0)) { $0 + $1.size }.humanReadable)")
                     .font(style.smallFont)
+                    .foregroundColor(style.secondaryText)
             }
-            HStack {
-                ThemeButton(title: "Put Selected Back", systemImage: "arrow.uturn.backward", isEnabled: !selectedEntries.isEmpty) {
+
+            // Two acts, two colours: putting something back is the safe one and
+            // takes the accent fill; deleting is the only irreversible one and
+            // takes red. Everything else on this screen is a plain control.
+            HStack(spacing: 10) {
+                ThemeButton(
+                    title: "Put Selected Back",
+                    systemImage: "arrow.uturn.backward",
+                    isPrimary: true,
+                    isEnabled: !selectedEntries.isEmpty
+                ) {
                     perform(selectedEntries, deleting: false)
-                }
-                ThemeButton(title: "Delete Selected…", systemImage: "trash", isEnabled: !selectedEntries.isEmpty) {
-                    pendingPermanentDeletion = selectedEntries
                 }
                 Spacer()
                 ThemeButton(
-                    title: "Delete ALL waiting items…",
+                    title: "Delete Selected…",
                     systemImage: "trash.fill",
-                    help: "Includes all \(entries.count) items, even outside the search. Requires another confirmation and cannot be undone."
-                ) { pendingPermanentDeletion = entries }
+                    isDestructive: true,
+                    isEnabled: !selectedEntries.isEmpty
+                ) {
+                    pendingPermanentDeletion = selectedEntries
+                }
             }
-            Text("Selected actions affect only visible items. Delete ALL waiting items is a separate, irreversible action across the entire Quarantine.")
-                .font(style.smallFont).foregroundColor(style.secondaryText)
+
+            HStack(spacing: 6) {
+                Text("Restoring puts items back exactly where they came from. Deleting is permanent.")
+                    .font(style.smallFont)
+                    .foregroundColor(style.secondaryText)
+                Spacer()
+                Button("Delete everything waiting…") {
+                    pendingPermanentDeletion = entries
+                }
+                .buttonStyle(.plain)
+                .font(style.smallFont)
+                .foregroundStyle(Color(red: 0.62, green: 0.13, blue: 0.15))
+                .help("Includes all \(entries.count) items, even outside the search. Requires another confirmation and cannot be undone.")
+                .disabled(entries.isEmpty)
+            }
         }
     }
 

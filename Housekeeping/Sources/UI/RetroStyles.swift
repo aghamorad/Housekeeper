@@ -413,6 +413,8 @@ struct ThemeButton: View {
     let title: String
     var systemImage: String? = nil
     var isPrimary: Bool = false
+    /// A delete or an irreversible move. Filled red, never the accent colour.
+    var isDestructive: Bool = false
     var isEnabled: Bool = true
     var help: String? = nil
     let action: () -> Void
@@ -436,10 +438,13 @@ struct ThemeButton: View {
     @ViewBuilder
     private var content: some View {
         if style.isRetro {
-            RetroButton(label: title, action: action, isDefault: isPrimary)
+            RetroButton(label: title, action: action, isDefault: isPrimary || isDestructive)
         } else {
             Button(action: action) { label }
-                .buttonStyle(HousekeepingButtonStyle(style: style, kind: isPrimary ? .primary : .secondary))
+                .buttonStyle(HousekeepingButtonStyle(
+                    style: style,
+                    kind: isDestructive ? .destructive : (isPrimary ? .primary : .secondary)
+                ))
         }
     }
 

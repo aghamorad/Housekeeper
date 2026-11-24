@@ -17,6 +17,11 @@ public final class AppRepairEngine: ObservableObject {
 
     // MARK: - Single App Diagnosis
 
+    /// Reads one app's Gatekeeper state. Read-only: nothing is changed here.
+    ///
+    /// Only the quarantine flag is a real blocker. `com.apple.provenance` is
+    /// attached to almost every downloaded app and is not a problem — treating it
+    /// as one is what put dozens of healthy apps on this screen.
     public func diagnoseApp(at url: URL) -> AppRepairCandidate {
         let path = url.path
         let name = url.deletingPathExtension().lastPathComponent
@@ -29,14 +34,15 @@ public final class AppRepairEngine: ObservableObject {
 
         let hasQuarantine = getxattr(path, "com.apple.quarantine", nil, 0, 0, 0) >= 0
         let hasProvenance = getxattr(path, "com.apple.provenance", nil, 0, 0, 0) >= 0
+        let signatureValid = Self.signatureIsValid(url)
 
-        var statusText = "Ready & Healthy"
-        if hasQuarantine && hasProvenance {
-            statusText = "Blocked by Gatekeeper (Quarantine & Provenance flags attached)"
-        } else if hasQuarantine {
-            statusText = "Quarantined by Gatekeeper (May trigger 'Damaged' prompt)"
-        } else if hasProvenance {
-            statusText = "Web Provenance metadata attached"
+        let statusText: String
+        if hasQuarantine {
+            statusText = "Downloaded with a quarantine flag — macOS will ask before opening it."
+        } else if !signatureValid {
+            statusText = "No download flag, but the app's own developer signature does not verify. Reinstalling it from its developer is the only fix."
+        } else {
+            statusText = "Ready. Nothing is blocking this app."
         }
 
         return AppRepairCandidate(
@@ -46,13 +52,33 @@ public final class AppRepairEngine: ObservableObject {
             version: version,
             hasQuarantine: hasQuarantine,
             hasProvenance: hasProvenance,
-            signatureValid: !hasQuarantine,
+            signatureValid: signatureValid,
             statusText: statusText
         )
     }
 
+    /// True when macOS accepts the app's existing signature. This never signs
+    /// anything; it only asks `codesign` to check what the developer shipped.
+    static func signatureIsValid(_ url: URL) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        process.arguments = ["--verify", "--strict", url.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            return false
+        }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+    }
+
     // MARK: - Batch Scan
 
+    /// Lists only apps that actually carry a quarantine flag. Provenance is not
+    /// included: it is normal metadata on downloaded apps, not a blocker, and
+    /// listing it made a healthy Mac look broken.
     public func scanInstalledApps() async {
         isScanning = true
         defer {
@@ -80,33 +106,26 @@ public final class AppRepairEngine: ObservableObject {
                 for url in enumerator where url.pathExtension == "app" {
                     let path = url.path
                     let hasQuarantine = getxattr(path, "com.apple.quarantine", nil, 0, 0, 0) >= 0
-                    let hasProvenance = getxattr(path, "com.apple.provenance", nil, 0, 0, 0) >= 0
+                    guard hasQuarantine else { continue }
 
-                    if hasQuarantine || hasProvenance {
-                        let name = url.deletingPathExtension().lastPathComponent
-                        let bundle = Bundle(url: url)
-                        let info = bundle?.infoDictionary
-                        let bundleID = bundle?.bundleIdentifier ?? "unknown"
-                        let version = (info?["CFBundleShortVersionString"] as? String)
-                            ?? (info?["CFBundleVersion"] as? String)
-                            ?? "1.0"
+                    let name = url.deletingPathExtension().lastPathComponent
+                    let bundle = Bundle(url: url)
+                    let info = bundle?.infoDictionary
+                    let bundleID = bundle?.bundleIdentifier ?? "unknown"
+                    let version = (info?["CFBundleShortVersionString"] as? String)
+                        ?? (info?["CFBundleVersion"] as? String)
+                        ?? "1.0"
 
-                        let statusText = hasQuarantine
-                            ? "Quarantined by Gatekeeper (Triggers 'Damaged' dialog)"
-                            : "Web download provenance attached"
-
-                        let candidate = AppRepairCandidate(
-                            url: url,
-                            name: name,
-                            bundleID: bundleID,
-                            version: version,
-                            hasQuarantine: hasQuarantine,
-                            hasProvenance: hasProvenance,
-                            signatureValid: !hasQuarantine,
-                            statusText: statusText
-                        )
-                        found.append(candidate)
-                    }
+                    found.append(AppRepairCandidate(
+                        url: url,
+                        name: name,
+                        bundleID: bundleID,
+                        version: version,
+                        hasQuarantine: true,
+                        hasProvenance: getxattr(path, "com.apple.provenance", nil, 0, 0, 0) >= 0,
+                        signatureValid: true,
+                        statusText: "Downloaded with a quarantine flag — macOS will ask before opening it."
+                    ))
                 }
             }
         }.value
@@ -121,6 +140,13 @@ public final class AppRepairEngine: ObservableObject {
         return await repairApp(candidate: candidate)
     }
 
+    /// Clears the download flag — and nothing else.
+    ///
+    /// It does not re-sign the app, does not clear other extended attributes and
+    /// does not change permissions. Replacing a developer's signature with an
+    /// ad-hoc one is what broke Chrome: Chrome's own integrity check compares the
+    /// signature it shipped with, and a re-signed bundle fails it. An app whose
+    /// signature is already invalid is not fixed by this button; it is reinstalled.
     public func repairApp(candidate: AppRepairCandidate) async -> AppRepairOutcome {
         isRepairing = true
         activeRepairApp = candidate.name
@@ -132,75 +158,42 @@ public final class AppRepairEngine: ObservableObject {
         let appPath = candidate.url.path
         var steps: [String] = []
 
-        // Step 1: Remove com.apple.quarantine attribute recursively
         let xattrRes = await runCommand("/usr/bin/xattr", args: ["-r", "-d", "com.apple.quarantine", appPath])
-        if xattrRes.succeeded {
-            steps.append("Cleared com.apple.quarantine attribute from bundle and binaries.")
-        } else {
-            steps.append("Quarantine flag removed or already cleared.")
-        }
+        steps.append(xattrRes.succeeded
+            ? "Cleared the download (quarantine) flag from the app bundle."
+            : "The download flag was already clear.")
 
-        // Step 2: Clear all extended provenance and quarantine attributes
-        let clearRes = await runCommand("/usr/bin/xattr", args: ["-r", "-c", appPath])
-        if clearRes.succeeded {
-            steps.append("Purged all extended Gatekeeper provenance and download tracking tags.")
-        }
-
-        // Step 3: Ensure execution permissions on the binary
-        let macosDir = candidate.url.appendingPathComponent("Contents/MacOS").path
-        if FileManager.default.fileExists(atPath: macosDir) {
-            _ = await runCommand("/bin/chmod", args: ["-R", "u+w,u+x", macosDir])
-            steps.append("Ensured executable user permissions on Contents/MacOS binaries.")
-        }
-
-        // Step 4: Ad-hoc code re-sign with fresh seal
-        let codesignRes = await runCommand("/usr/bin/codesign", args: ["--force", "--deep", "--sign", "-", appPath])
-        if codesignRes.succeeded {
-            steps.append("Re-signed application and nested frameworks ad-hoc with fresh seal.")
-        } else {
-            steps.append("Ad-hoc re-sign completed (or code signature intact).")
-        }
-
-        // Step 5: Verify repair
         let stillQuarantined = getxattr(appPath, "com.apple.quarantine", nil, 0, 0, 0) >= 0
-        let success = !stillQuarantined
+        let signatureValid = Self.signatureIsValid(candidate.url)
+        steps.append(signatureValid
+            ? "The app's own developer signature still verifies. Signatures were not changed."
+            : "The app's own signature does not verify — it shipped that way. Housekeeper did not replace it.")
+
+        let success = !stillQuarantined && signatureValid
+        let message: String
+        if !stillQuarantined && signatureValid {
+            message = "\(candidate.name) has no download flag and its signature is intact. It will open normally."
+        } else if !stillQuarantined {
+            message = "The download flag is cleared, but \(candidate.name)'s developer signature is invalid. Reinstall it from its developer; no button can restore a signature that was never there."
+        } else {
+            message = "The download flag could not be cleared. macOS may need administrator permission for an app in a system folder."
+        }
 
         let outcome = AppRepairOutcome(
             appName: candidate.name,
             url: candidate.url,
             succeeded: success,
             stepsTaken: steps,
-            message: success
-                ? "\(candidate.name) repaired successfully! You can now launch it without macOS claiming it is damaged."
-                : "Quarantine could not be fully removed. You may need administrator permissions."
+            message: message
         )
 
         self.latestOutcome = outcome
 
-        // Update candidate in list if present
-        if let idx = candidates.firstIndex(where: { $0.url == candidate.url }) {
-            if success {
-                candidates.remove(at: idx)
-            }
+        if success, let idx = candidates.firstIndex(where: { $0.url == candidate.url }) {
+            candidates.remove(at: idx)
         }
 
         return outcome
-    }
-
-    // MARK: - Enable System-Wide "Allow from Anywhere"
-
-    public func enableGatekeeperAnywhere() async -> (success: Bool, error: String?) {
-        let script = "do shell script \"spctl --master-disable\" with administrator privileges"
-        var errorDict: NSDictionary?
-        if let appleScript = NSAppleScript(source: script) {
-            appleScript.executeAndReturnError(&errorDict)
-            if let errorDict {
-                let msg = errorDict[NSAppleScript.errorMessage] as? String ?? "Authorization denied"
-                return (false, msg)
-            }
-            return (true, nil)
-        }
-        return (false, "Could not initialize AppleScript")
     }
 
     // MARK: - Subprocess Helper

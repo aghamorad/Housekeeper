@@ -149,7 +149,7 @@ struct ContentView: View {
         case .localModels: return "Local AI Models"
         case .fanControl: return "Cooling & Fans"
         case .uninstaller: return "Uninstall Apps"
-        case .appRepair: return "Repair Damaged Apps"
+        case .appRepair: return "Open a Downloaded App"
         case .batteryHealth: return "Battery Health"
         case .vpnTunnels: return "VPN Tunnels"
         case .dnsSwitcher: return "DNS Switcher"
@@ -234,7 +234,7 @@ struct ContentView: View {
             QuickJumpDestination(id: "activity", title: "Background Activity", subtitle: "Running processes & login items", icon: "list.bullet.rectangle", keywords: "cpu memory processes") {
                 appState.showBackgroundActivity = true
             },
-            QuickJumpDestination(id: "repair", title: "Repair Damaged Apps", subtitle: "Fix Gatekeeper & quarantine flags", icon: "bandage.fill", keywords: "gatekeeper damaged xattr") {
+            QuickJumpDestination(id: "repair", title: "Open a Downloaded App", subtitle: "Clear a download flag, safely", icon: "checkmark.shield", keywords: "gatekeeper quarantine xattr downloaded") {
                 appState.showAppRepair = true
             },
             QuickJumpDestination(id: "terminal", title: "Terminal Health", subtitle: "Audit shell PATH & CLI links", icon: "wrench.and.screwdriver", keywords: "path cli brew symlinks") {
@@ -861,7 +861,7 @@ private struct JobBar: View {
                             sidebarJob(job, customTitle: "Update Apps", customIcon: "arrow.triangle.2.circlepath")
                         }
                         if let job = allJobs.first(where: { $0.id == "repair-damaged-app" }) {
-                            sidebarJob(job, customTitle: "Repair Damaged Apps", customIcon: "bandage.fill")
+                            sidebarJob(job, customTitle: "Open a Downloaded App", customIcon: "checkmark.shield")
                         }
                         if let job = allJobs.first(where: { $0.id == "check-my-setup" }) {
                             sidebarJob(job, customTitle: "Terminal Health", customIcon: "wrench.and.screwdriver")
@@ -1207,7 +1207,7 @@ private struct JobBar: View {
                 title: "Repair Damaged App",
                 systemImage: "bandage.fill",
                 zone: .app,
-                help: "Fixes 'App is damaged and can't be opened', unidentified developer, or Gatekeeper quarantine blocks on any Mac application with one click.",
+                help: "Clears the download flag on a downloaded app so macOS stops asking. It never changes the app's signature.",
                 action: { appState.showAppRepair = true }
             ),
 

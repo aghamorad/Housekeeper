@@ -13,7 +13,10 @@ set -euo pipefail
 NAME="Housekeeper Local Signing"
 DIR="$HOME/Library/Application Support/Housekeeper/Signing"
 KEYCHAIN="$HOME/Library/Keychains/housekeeper-signing.keychain-db"
-PASSWORD="housekeeper"
+# The signing keychain has no password on purpose. Its only contents are a
+# self-signed certificate for this app, and a password here means a SecurityAgent
+# prompt during an unattended build — which is exactly what used to stop builds.
+PASSWORD=""
 
 mkdir -p "$DIR"
 
@@ -34,13 +37,15 @@ if [[ ! -f "$KEYCHAIN" ]]; then
   security create-keychain -p "$PASSWORD" "$KEYCHAIN"
   security set-keychain-settings -lut 21600 "$KEYCHAIN"
   security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
-  security import "$DIR/identity.p12" -k "$KEYCHAIN" -P "$PASSWORD" \
+security set-keychain-settings -t 3600 "$KEYCHAIN" >/dev/null 2>&1 || true
+  security import "$DIR/identity.p12" -k "$KEYCHAIN" -P "housekeeper" \
     -T /usr/bin/codesign -A >/dev/null
   security set-key-partition-list -S apple-tool:,apple:,codesign: \
-    -s -k "$PASSWORD" "$KEYCHAIN" >/dev/null
+    -s -k "" "$KEYCHAIN" >/dev/null
 fi
 
 security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
+security set-keychain-settings -t 3600 "$KEYCHAIN" >/dev/null 2>&1 || true
 
 # codesign only sees keychains on the search list.
 CURRENT="$(security list-keychains -d user | sed 's/^ *//;s/"//g')"

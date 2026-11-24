@@ -227,9 +227,9 @@ public final class PermissionsDoctorEngine: ObservableObject {
                             category: .gatekeeper,
                             severity: .warning,
                             title: "Quarantined App: \(app.deletingPathExtension().lastPathComponent)",
-                            detail: "App carries Gatekeeper quarantine flags. It may prompt 'App is damaged and can't be opened' or fail to run background CLI tools.",
+                            detail: "App was downloaded and still carries macOS's quarantine flag, so opening it may show a Gatekeeper prompt. Clearing the flag does not change the app or its signature.",
                             path: path,
-                            recommendedFix: "Remove Gatekeeper quarantine flag safely.",
+                            recommendedFix: "Clear the download flag (quarantine) only.",
                             canAutoFix: true
                         ))
                     }
@@ -374,10 +374,12 @@ public final class PermissionsDoctorEngine: ObservableObject {
 
         case .gatekeeper:
             guard let path = issue.path else { return false }
-            removexattr(path, "com.apple.quarantine", 0)
-            removexattr(path, "com.apple.provenance", 0)
-            _ = try? await runner.run(executable: "/usr/bin/xattr", arguments: ["-d", "com.apple.quarantine", path])
-            _ = try? await runner.run(executable: "/usr/bin/xattr", arguments: ["-d", "com.apple.provenance", path])
+            // Only the download flag. The app's signature and any other extended
+            // attribute are the developer's and macOS's business, not this app's.
+            _ = try? await runner.run(
+                executable: "/usr/bin/xattr",
+                arguments: ["-r", "-d", "com.apple.quarantine", path]
+            )
             return true
 
         case .backgroundDaemons:

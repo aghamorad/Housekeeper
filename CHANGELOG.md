@@ -1,3 +1,23 @@
+## 0.32.1 — Emergency fix: Housekeeper no longer re-signs apps
+
+This release removes a destructive behaviour introduced by the Repair screen. That screen was supposed to do one harmless thing — clear the download flag so a downloaded app opens without a second trip to System Settings. Instead it also replaced each app's developer signature with a local ad-hoc one, cleared every extended attribute, and offered a button that disabled Gatekeeper for the whole Mac.
+
+Re-signing an app destroys the developer's seal. For Google Chrome that is fatal: Chrome verifies its own signature and refuses to start when it has been replaced, which is what happened on 24 November 2026. On the machine this was found on, 65 app bundles in `/Applications` had their signatures replaced in one batch.
+
+- **Removed all code signing from the app (`AppRepairEngine.swift`)**. `codesign --force --deep --sign -` is gone. There is no code path left in Housekeeper that signs, re-signs, or modifies an app's signature.
+- **Removed `xattr -r -c` and provenance stripping.** The repair now removes exactly one attribute, `com.apple.quarantine`, recursively, and nothing else. `com.apple.provenance` is normal metadata on downloaded apps and is no longer treated as a fault.
+- **Removed `spctl --master-disable`.** The "Allow Anywhere" button and its code are deleted. Housekeeper will never turn Gatekeeper off.
+- **The screen tells the truth now (`AppRepairView.swift`)**: "Open a Downloaded App" clears a download flag. It checks the app's existing signature with `codesign --verify` and reports it, but never changes it. If a signature does not verify, it says plainly that only a reinstall from the developer can fix it, and points at macOS's own **Open Anyway**.
+- **The scan lists only apps that actually carry a quarantine flag** — not every downloaded app. Listing provenance made a healthy Mac look like it had dozens of problems and invited the batch repair that caused this.
+- **Fix Permissions (Doctor)** now clears only the quarantine flag too, instead of also deleting provenance.
+- **The supplied icon is used unchanged (`Housekeeping/Resources/AppIcon.icns`).** `generate_app_icon.sh` now copies the definitive 1024px liquid-glass icns byte for byte instead of resampling a PNG into a second squircle; the checksum in the bundle matches `/Users/Morad/Desktop/AppIcon.icns`.
+- **Clean Up and Quarantine action bars were decluttered.** A destructive button style now exists: delete is a filled red control, while restore keeps the accent fill. Quarantine has exactly two acts — **Put Selected Back** and **Delete Selected…** — with “Delete everything waiting…” moved to a quiet red text link. Clean Up lost the sidebar-duplicate **Quarantine** button, the duplicate **Deselect shown**, and the repeated tips.
+- Version 0.32.1 (67).
+
+### Recovery for apps whose signature was replaced
+
+Housekeeper did not delete anything and did not touch app data, preferences or profiles. The change is to each bundle's signature. Most apps still launch, and their next self-update restores a proper developer signature. Google Chrome (and Chrome Beta) must be reinstalled from Google's own installer. A per-app checklist is at `~/Desktop/Housekeeper — signature recovery.md`.
+
 ## 0.32.0 — No More Permission Prompts, VPN Services That Actually Go Away, Safe Route Sweeps, and a Real Intel Mac Path
 
 - **One-time privileged helper, and a stable signing identity (`Core/PrivilegedHelper.swift`, `Core/HardwareProfile.swift`, `main.swift`, `script/setup_signing_identity.sh`, `script/package_release.sh`)**:

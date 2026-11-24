@@ -10,8 +10,6 @@ struct AppRepairView: View {
     @State private var droppedAppURL: URL?
     @State private var selectedCandidate: AppRepairCandidate?
     @State private var isTargetedForDrop = false
-    @State private var anywhereStatusNote: String?
-    @State private var showAnywhereAlert = false
 
     var body: some View {
         ScrollView {
@@ -54,32 +52,22 @@ struct AppRepairView: View {
                     Image(systemName: "bandage.fill")
                         .font(.system(size: 24))
                         .foregroundStyle(style.accent)
-                    Text("Repair 'Damaged' Apps & Gatekeeper")
+                    Text("Open a Downloaded App")
                         .font(style.isRetro ? style.titleFont : .system(size: 26, weight: .bold))
                 }
-                Text("Fixes 'App is damaged and can't be opened. You should move it to the Trash' and 'Unidentified Developer' blocks with one click.")
+                Text("Drag a downloaded app here to clear its download flag so macOS stops asking. Housekeeper only touches that flag — it never re-signs an app or changes the developer's signature.")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            HStack(spacing: 8) {
-                ThemeButton(
-                    title: "Scan Apps",
-                    systemImage: "arrow.clockwise",
-                    isEnabled: !engine.isScanning
-                ) {
-                    Task {
-                        await engine.scanInstalledApps()
-                    }
+            ThemeButton(
+                title: "Scan Apps",
+                systemImage: "arrow.clockwise",
+                isEnabled: !engine.isScanning
+            ) {
+                Task {
+                    await engine.scanInstalledApps()
                 }
-                ThemeButton(
-                    title: "Allow Anywhere",
-                    systemImage: "lock.open.fill",
-                    isPrimary: false
-                ) {
-                    enableAnywhere()
-                }
-                .help("Runs 'spctl --master-disable' to re-enable the 'Anywhere' Gatekeeper option in macOS System Settings.")
             }
         }
     }
@@ -104,7 +92,7 @@ struct AppRepairView: View {
                         .font(.system(size: 36))
                         .foregroundStyle(isTargetedForDrop ? style.accent : .secondary)
 
-                    Text(isTargetedForDrop ? "Release to diagnose and repair app" : "Drag and drop any .app here to repair Gatekeeper errors")
+                    Text(isTargetedForDrop ? "Release to clear its download flag" : "Drag and drop a downloaded .app here")
                         .font(.system(size: 15, weight: .semibold))
 
                     Text("Or select an app manually from your disk")
@@ -171,8 +159,8 @@ struct AppRepairView: View {
                     }
                 } else {
                     ThemeButton(
-                        title: "Repair App Now",
-                        systemImage: "bandage.fill",
+                        title: "Clear Download Flag",
+                        systemImage: "checkmark.shield",
                         isPrimary: true
                     ) {
                         Task {
@@ -192,10 +180,10 @@ struct AppRepairView: View {
                     badText: "Quarantine Attached"
                 )
                 statusChip(
-                    title: "Provenance Flag",
-                    present: candidate.hasProvenance,
-                    okText: "Clean",
-                    badText: "Provenance Attached"
+                    title: "Developer Signature",
+                    present: !candidate.signatureValid,
+                    okText: "Verifies",
+                    badText: "Invalid — reinstall from its developer"
                 )
             }
         }
@@ -280,17 +268,17 @@ struct AppRepairView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Quarantined Apps on this Mac")
+                    Text("Apps with a Download Flag")
                         .font(.system(size: 16, weight: .bold))
-                    Text("Installed applications currently marked with Gatekeeper quarantine flags.")
+                    Text("Only apps macOS will actually ask about. Clearing the flag does not change the app itself.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
                 if !engine.candidates.isEmpty {
                     ThemeButton(
-                        title: "Repair All (\(engine.candidates.count))",
-                        systemImage: "bandage.fill",
+                        title: "Clear All (\(engine.candidates.count))",
+                        systemImage: "checkmark.shield",
                         isPrimary: true,
                         isEnabled: !engine.isRepairing
                     ) {
@@ -312,7 +300,7 @@ struct AppRepairView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 16))
                         .foregroundStyle(.green)
-                    Text("No quarantined applications detected. All scanned apps in /Applications are clean!")
+                    Text("No app in /Applications is carrying a download flag. Nothing to do.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -343,8 +331,8 @@ struct AppRepairView: View {
                             Spacer()
 
                             ThemeButton(
-                                title: "Repair",
-                                systemImage: "bandage",
+                                title: "Clear",
+                                systemImage: "checkmark.shield",
                                 isPrimary: true,
                                 isEnabled: !engine.isRepairing
                             ) {
@@ -373,11 +361,15 @@ struct AppRepairView: View {
                     .font(.system(size: 12, weight: .bold))
             }
 
-            Text("When you download software via a browser or third-party channel, macOS attaches an extended attribute named com.apple.quarantine. If the developer is unidentified, or if the application bundle was updated without Apple notarization, macOS refuses to open it with the warning: 'AppName is damaged and can't be opened. You should move it to the Trash'.")
+            Text("When you download an app, macOS attaches a small marker called a quarantine flag (its system name is com.apple.quarantine). It does not mean the app is broken; it means “this arrived from the internet, ask first”. Clearing it is what lets the app open without a second trip to System Settings.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
 
-            Text("Housekeeper removes this quarantine attribute and re-signs the app ad-hoc, allowing macOS to run it directly without throwing damage errors.")
+            Text("A signature is different. It is the developer's seal, embedded in the app, and it is what proves the app is really theirs. Housekeeper never replaces it: re-signing an app with a local signature destroys that proof and can stop the app launching — which is exactly what happened to Chrome once. If an app's own signature does not verify, reinstall it from its developer; there is no shortcut.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+
+            Text("If macOS still refuses the app after the flag is cleared, open System Settings → Privacy & Security and press “Open Anyway” beside the app's name. That is macOS's own approval, and it is safer than rewriting the app.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
         }
@@ -410,15 +402,4 @@ struct AppRepairView: View {
         }
     }
 
-    private func enableAnywhere() {
-        Task {
-            let res = await engine.enableGatekeeperAnywhere()
-            if res.success {
-                anywhereStatusNote = "'Allow from Anywhere' successfully enabled in Gatekeeper."
-            } else {
-                anywhereStatusNote = res.error
-            }
-            showAnywhereAlert = true
-        }
-    }
 }

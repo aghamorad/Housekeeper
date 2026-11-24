@@ -787,10 +787,6 @@ struct CleanerView: View {
             HStack(spacing: 10) {
                 AskHousekeeperButton(topic: housekeeperTopic, title: "Explain this screen")
                 Spacer()
-                ThemeButton(title: "Quarantine", systemImage: "archivebox",
-                            help: "Review or restore items previously moved into Quarantine.") {
-                    appState.screen = .quarantine
-                }
                 if model.category != .uninstall && model.category != .trash {
                     let shown = model.visibleCandidates(in: model.category)
                     let selectedShown = shown.filter(\.isSelected)
@@ -800,20 +796,12 @@ struct CleanerView: View {
                         isEnabled: model.phase == .ready && !shown.isEmpty && selectedShown.count < shown.count,
                         help: "Select only the results on this shelf currently matching the search; nothing moves yet."
                     ) { model.setVisible(selected: true) }
-                    if !selectedShown.isEmpty {
-                        ThemeButton(
-                            title: "Deselect shown",
-                            systemImage: "xmark.circle",
-                            isEnabled: model.phase == .ready,
-                            help: "Leave other shelves and search-hidden items unchanged."
-                        ) { model.clearVisibleSelection() }
-                    }
                     ThemeButton(title: cleanButtonTitle, systemImage: "checklist", isPrimary: true,
                                 isEnabled: !model.selectedCandidates.isEmpty && model.phase == .ready,
                                 help: "Review the selected paths before anything moves.") { model.requestClean() }
                 }
                 if model.category == .uninstall && model.anyAppsSelected {
-                    ThemeButton(title: bulkUninstallTitle, systemImage: "trash.fill", isPrimary: true,
+                    ThemeButton(title: bulkUninstallTitle, systemImage: "trash.fill", isDestructive: true,
                                 isEnabled: model.phase == .ready,
                                 help: "Review the exact paths before any application moves.") {
                         model.requestUninstallSelected()
@@ -931,6 +919,7 @@ struct CleanerView: View {
                         ThemeButton(
                             title: action == .emptyTrash ? "Delete Permanently" : "Move to Quarantine",
                             isPrimary: true,
+                            isDestructive: action == .emptyTrash,
                             isEnabled: true,
                             help: action == .emptyTrash
                                 ? "Removes what is in the Trash for good."

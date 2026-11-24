@@ -133,7 +133,7 @@ enum HousekeepingFeedback {
 }
 
 struct HousekeepingButtonStyle: ButtonStyle {
-    enum Kind { case primary, secondary, quiet }
+    enum Kind { case primary, secondary, quiet, destructive }
     let style: UIStyle
     let kind: Kind
     @Environment(\.isEnabled) private var enabled
@@ -146,7 +146,7 @@ struct HousekeepingButtonStyle: ButtonStyle {
         let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
         return configuration.label
             .font(style.labelFont)
-            .foregroundStyle(kind == .primary && enabled ? Color.white : style.text)
+            .foregroundStyle((kind == .primary || kind == .destructive) && enabled ? Color.white : style.text)
             .padding(.horizontal, kind == .quiet ? 9 : 13)
             .padding(.vertical, 7)
             .background {
@@ -161,6 +161,15 @@ struct HousekeepingButtonStyle: ButtonStyle {
                     shape.fill(Color.primary.opacity(hovering ? 0.10 : 0.045))
                 case .quiet:
                     shape.fill(Color.primary.opacity(hovering ? 0.08 : 0))
+                case .destructive:
+                    // The one colour in the app that means "this cannot be put
+                    // back". It is a fill, not a tint on a grey button, because a
+                    // delete has to read as a different kind of act.
+                    shape.fill(Color(red: 0.62, green: 0.13, blue: 0.15).opacity(enabled ? 1.0 : 0.28))
+                    shape.fill(LinearGradient(
+                        colors: [.white.opacity(hovering ? 0.20 : 0.09), .clear, .black.opacity(0.12)],
+                        startPoint: .top, endPoint: .bottom
+                    ))
                 }
             }
             .overlay {
@@ -191,9 +200,11 @@ struct HousekeepingButtonStyle: ButtonStyle {
                 }
             }
             .shadow(
-                color: kind == .primary && enabled
-                    ? style.accentShaded.opacity(lifted ? 0.42 : 0.18)
-                    : .black.opacity(lifted ? 0.12 : 0.04),
+                color: kind == .destructive && enabled
+                    ? Color(red: 0.62, green: 0.13, blue: 0.15).opacity(lifted ? 0.40 : 0.18)
+                    : kind == .primary && enabled
+                        ? style.accentShaded.opacity(lifted ? 0.42 : 0.18)
+                        : .black.opacity(lifted ? 0.12 : 0.04),
                 radius: lifted ? 10 : 4,
                 y: lifted ? 3 : 2
             )
