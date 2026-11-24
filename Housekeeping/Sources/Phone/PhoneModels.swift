@@ -179,13 +179,85 @@ enum PhoneTool {
         }
     }
 
-    static func set(_ spot: PhoneSpot, on device: PhoneDevice) async -> PhoneOutcome {
-        await withCheckedContinuation { continuation in
+    static func set(_ spot: PhoneSpot, on device: PhoneDevice, runner: ProcessRunner) async -> PhoneOutcome {
+        if let blocked = await prepare(device: device, runner: runner) { return blocked }
+        return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 continuation.resume(returning: hold(spot, on: device))
             }
         }
     }
+
+    /// What the phone wants said before a developer session can exist.
+    ///
+    /// Two things have to be true on the handset, and neither is true on a phone
+    /// that has only ever been plugged into a Mac for charging and Finder:
+    /// Developer Mode has to be switched on, and the developer disk image has to
+    /// be mounted. Without them the helper fails at "Failed to start service"
+    /// and answers with five possible explanations, none of which names the
+    /// actual one. So the two are asked about directly, and the disk image — a
+    /// step that is only ever a nuisance — is mounted here rather than left as
+    /// homework.
+    private static func prepare(device: PhoneDevice, runner: ProcessRunner) async -> PhoneOutcome? {
+        guard let executable = executable() else {
+            return PhoneOutcome(ok: false, message: "pymobiledevice3 is not installed. In Terminal, run: \(installHint)")
+        }
+
+        let developer = try? await runner.run(
+            executable: executable,
+            arguments: ["amfi", "developer-mode-status", "--udid", device.udid, "--userspace"],
+            environment: environment(),
+            timeout: 120
+        )
+        if let developer, developer.succeeded {
+            let answer = developer.stdout
+                .split(separator: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .last { !$0.isEmpty } ?? ""
+            if answer.caseInsensitiveCompare("false") == .orderedSame {
+                return PhoneOutcome(ok: false, message: developerModeMessage)
+            }
+        }
+
+        // The image stays mounted until the phone restarts, and mounting it
+        // takes the better part of a minute the first time. Asking what is
+        // already there keeps every later press from paying that again.
+        let mounted = try? await runner.run(
+            executable: executable,
+            arguments: ["mounter", "list", "--udid", device.udid, "--userspace"],
+            environment: environment(),
+            timeout: 90
+        )
+        if let mounted, mounted.succeeded, mounted.stdout.contains("ImageType") {
+            return nil
+        }
+
+        let mount = try? await runner.run(
+            executable: executable,
+            arguments: ["mounter", "auto-mount", "--udid", device.udid, "--userspace"],
+            environment: environment(),
+            timeout: 300
+        )
+        if let mount, !mount.succeeded {
+            let said = (mount.stdout + "\n" + mount.stderr).lowercased()
+            if said.contains("developer mode is disabled") {
+                return PhoneOutcome(ok: false, message: developerModeMessage)
+            }
+            // Anything else is left to the real command to report, which knows
+            // more about why it could not start.
+        }
+        return nil
+    }
+
+    /// Apple refuses to switch Developer Mode on from a cable while the phone has
+    /// a passcode ("Cannot enable developer-mode when passcode is set"), so this
+    /// cannot be done for the reader. The steps below are the whole of it, and
+    /// they are one-time.
+    static let developerModeMessage = """
+    Developer Mode is off on this iPhone, and Apple only allows it to be turned on by hand on the phone. \
+    On the iPhone: Settings → Privacy & Security → Developer Mode → turn it on → Restart. After it restarts, \
+    unlock it and tap Turn On when it asks. Then come back and press the place again.
+    """
 
     /// Starts the helper and waits only until it reports that the coordinates
     /// have been accepted, then keeps the process — and therefore the session —
@@ -323,8 +395,19 @@ enum PhoneTool {
         return environment
     }
 
+    /// `rich` and `logging` colour their output with ANSI escapes that mean
+    /// nothing in a label; a status line that begins with `[32m` is not a
+    /// sentence. They are removed before a line is chosen.
+    private static func plain(_ text: String) -> String {
+        text.replacingOccurrences(
+            of: "\u{001B}\\[[0-9;]*[A-Za-z]",
+            with: "",
+            options: .regularExpression
+        )
+    }
+
     private static func lastLine(of output: String, status: Int32) -> String {
-        let lines = output
+        let lines = plain(output)
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
@@ -337,7 +420,7 @@ enum PhoneTool {
     /// One line of the helper's own last complaint, capped so a traceback cannot
     /// become the status line.
     private static func readable(_ result: ProcessRunner.Result) -> String {
-        let output = result.stderr.isEmpty ? result.stdout : result.stderr
+        let output = plain(result.stderr.isEmpty ? result.stdout : result.stderr)
         let lines = output
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }

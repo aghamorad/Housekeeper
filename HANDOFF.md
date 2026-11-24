@@ -1,3 +1,31 @@
+## 2026-11-24 — Housekeeper 0.32.2 (68): Spoof Location actually works again
+
+**Symptom**: pressing a place on *Mammad's iPhone* (iPhone 18,1, iOS 27.2.1) ended in
+`pymobiledevice3 ERROR Failed to start service. Possible reasons are:` plus five guesses.
+
+**Two causes, both verified on this Mac:**
+1. `pymobiledevice3` was **10.9.0** and did not know iOS 27.2.1 (build 27B52). Upgraded with
+   `pipx upgrade pymobiledevice3` → **11.63.1**. The CLI surface Housekeeper uses is unchanged.
+2. The iPhone had **Developer Mode off** and **no developer disk image mounted**. Developer Mode
+   cannot be enabled from the Mac while the phone has a passcode (`Cannot enable developer-mode
+   when passcode is set`), so it has to be switched on the phone. It is now **on**, and the app
+   mounts the image itself.
+
+**Changed:**
+- `Phone/PhoneModels.swift`: new `prepare(device:runner:)` runs `amfi developer-mode-status` first
+  (plain-language Developer Mode message when false), then `mounter list` and, only if the image is
+  absent, `mounter auto-mount`. `set(_:on:runner:)` now takes the runner. ANSI escapes stripped
+  from helper output (`plain()`).
+- `Phone/PhoneView.swift`: passes the runner; one-time-setup note names Developer Mode.
+- `Info.plist`: 0.32.2 (68).
+
+**Verified end to end** against Mammad's iPhone over USB in the installed app: New York set
+(session held, `simulate-location` child alive), Real GPS cleared it, New York set again.
+
+CLI equivalents used while diagnosing: `pymobiledevice3 usbmux list`,
+`amfi developer-mode-status --udid X --userspace`, `mounter auto-mount ...`,
+`developer dvt simulate-location set --udid X --userspace -- LAT LON`.
+
 ## 2026-11-24 — Housekeeper 0.32.1 (67): Emergency removal of the app re-signing bug
 
 0.32.0's Repair screen ran `codesign --force --deep --sign -` and `xattr -r -c` on apps, plus a `spctl --master-disable` button. On 2026-11-24 15:27–15:28 it re-signed 65 bundles in `/Applications`; Chrome then refused to start because its own seal was gone.

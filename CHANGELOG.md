@@ -1,3 +1,19 @@
+## 0.32.2 — Spoof Location: say what the phone actually needs, and mount the image for it
+
+The screen failed with `Failed to start service. Possible reasons are:` followed by five
+guesses from the helper. The real cause on this Mac was one of them and nothing said which:
+the iPhone's **Developer Mode was off**, and its **developer disk image was not mounted**.
+Apple refuses to enable Developer Mode over a cable while a passcode is set, so the switch
+has to be flipped on the phone.
+
+- `PhoneTool` now asks the phone directly before starting a session (`amfi developer-mode-status`) and, when Developer Mode is off, answers with the three taps that fix it instead of the helper's wall of text.
+- `mounter auto-mount` runs before the session, so the developer disk image is mounted for the reader rather than being left as homework; a "Developer Mode is disabled" answer from the mount maps to the same plain message.
+- ANSI colour escapes are stripped from anything the helper says, so a status line can no longer begin with `[32m`.
+- The screen's one-time-setup note names Developer Mode.
+
+Cause checked on this Mac on 2026-11-24 with `pymobiledevice3` 11.63.1 after upgrading it
+from 10.9.0 (which also did not know iOS 27.2.1's build 27B52).
+
 ## 0.32.1 — Emergency fix: Housekeeper no longer re-signs apps
 
 This release removes a destructive behaviour introduced by the Repair screen. That screen was supposed to do one harmless thing — clear the download flag so a downloaded app opens without a second trip to System Settings. Instead it also replaced each app's developer signature with a local ad-hoc one, cleared every extended attribute, and offered a button that disabled Gatekeeper for the whole Mac.

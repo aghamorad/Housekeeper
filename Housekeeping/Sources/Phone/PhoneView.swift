@@ -65,7 +65,7 @@ final class PhoneModel: ObservableObject {
         busy = true
         isError = false
         status = "Setting \(spot.city)… the first press can take up to a minute."
-        let outcome = await PhoneTool.set(spot, on: device)
+        let outcome = await PhoneTool.set(spot, on: device, runner: runner)
         busy = false
         if outcome.ok {
             current = spot
@@ -188,6 +188,11 @@ struct PhoneView: View {
             Divider().opacity(0.5)
 
             Text("Nothing is installed on the phone, nothing is jailbroken, and no app data is changed. Every app that asks the phone where it is — Maps, Weather, games, anything that records where you go — will be given the place you choose, so choose with that in mind.")
+                .font(style.smallFont)
+                .foregroundColor(style.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("One-time setup: iOS only allows this with Developer Mode on. If it is off, the first press says so and gives you the three taps on the phone that fix it. The developer image iOS needs is mounted for you.")
                 .font(style.smallFont)
                 .foregroundColor(style.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
