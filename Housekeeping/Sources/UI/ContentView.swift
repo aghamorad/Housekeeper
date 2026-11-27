@@ -370,6 +370,7 @@ private struct ToolNotificationsModifier: ViewModifier {
 struct HousekeepingSurface: ViewModifier {
     let style: UIStyle
     @AppStorage("housekeeping.appearance") private var appearance = "system"
+    @AppStorage("housekeeping.textZoomStep") private var textZoomStep = 0
 
     private var colorScheme: ColorScheme? {
         if style.isRetro { return .light }
@@ -380,8 +381,21 @@ struct HousekeepingSurface: ViewModifier {
         }
     }
 
+    private var dynamicTypeSize: DynamicTypeSize {
+        switch textZoomStep {
+        case ...(-2): return .small
+        case -1: return .medium
+        case 0: return .large
+        case 1: return .xLarge
+        case 2: return .xxLarge
+        case 3: return .xxxLarge
+        default: return .accessibility1
+        }
+    }
+
     func body(content: Content) -> some View {
         content
+            .dynamicTypeSize(dynamicTypeSize)
             .background { HousekeepingBackdrop(style: style) }
             .preferredColorScheme(colorScheme)
             .tint(style.accentShaded)
@@ -794,6 +808,37 @@ private struct JobBar: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 14)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                HousekeepingFeedback.press()
+                appState.housekeeperTopic = housekeeperTopic
+                appState.showHousekeeper = true
+            }
+            .contextMenu {
+                Button("Talk to Housekeeper…") {
+                    appState.housekeeperTopic = housekeeperTopic
+                    appState.showHousekeeper = true
+                }
+                Button("Go to Dashboard") {
+                    appState.goHomeWorkspace()
+                }
+                Button("Quick Jump…") {
+                    NotificationCenter.default.post(name: .housekeepingOpenQuickJump, object: nil)
+                }
+                Divider()
+                Button("Make Text Bigger (⌘+)") {
+                    let cur = UserDefaults.standard.integer(forKey: "housekeeping.textZoomStep")
+                    UserDefaults.standard.set(min(4, cur + 1), forKey: "housekeeping.textZoomStep")
+                }
+                Button("Make Text Smaller (⌘-)") {
+                    let cur = UserDefaults.standard.integer(forKey: "housekeeping.textZoomStep")
+                    UserDefaults.standard.set(max(-2, cur - 1), forKey: "housekeeping.textZoomStep")
+                }
+                Button("Reset Text Size") {
+                    UserDefaults.standard.set(0, forKey: "housekeeping.textZoomStep")
+                }
+            }
+            .help("Click or right-click the Housekeeper to talk, jump to any tool, or zoom text.")
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {

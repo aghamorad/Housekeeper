@@ -27,6 +27,7 @@ struct RoutesView: View {
     @State private var showSelectedOnly = false
     @State private var simpleCountryFilter = ""
     @State private var showAllSimpleCountries = false
+    @State private var showPlainGuide = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -276,6 +277,7 @@ struct RoutesView: View {
             if model.uiMode == .simple {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
+                        routePlainGuideCard
                         if model.providerKind == .expressvpn { expressMCPSettings }
                         simpleSettings
                     }
@@ -290,6 +292,41 @@ struct RoutesView: View {
             stickyRunBar
                 .padding(14)
         }
+    }
+
+    private var routePlainGuideCard: some View {
+        DisclosureGroup(isExpanded: $showPlainGuide) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("What Route Sweep does: it connects to each selected VPN server and protocol (WireGuard, OpenVPN, etc.) one by one and checks whether real internet traffic actually gets through.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(style.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("What is going to happen: your internet will disconnect and reconnect several times while it runs. That is normal. When it finishes — or if you press Stop — Housekeeper closes the test tunnel cleanly so you are never stuck offline.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(style.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("How to start: 1) Make sure Windscribe, Surfshark, or ExpressVPN is signed in. 2) Pick Quick (1–5 min) and 2–3 countries. 3) Press Start, then connect to the fastest green route in your VPN app.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(style.text)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 8) {
+                    ThemeButton(title: "Try Free Cloudflare Clean VPN") {
+                        HousekeepingFeedback.press()
+                        appState.showCloudflareVPN = true
+                    }
+                    Spacer()
+                }
+                .padding(.top, 2)
+            }
+            .padding(.top, 6)
+        } label: {
+            Label("How Route Sweep Works (Plain Guide)", systemImage: "questionmark.circle.fill")
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(style.accent)
+        }
+        .padding(12)
+        .housekeepingCard(cornerRadius: 10)
     }
 
     private var expressMCPSettings: some View {

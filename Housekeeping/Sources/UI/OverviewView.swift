@@ -100,8 +100,31 @@ struct OverviewView: View {
                 HousekeepingFeedback.press()
                 appState.showHousekeeper = true
             }
+            .contextMenu {
+                Button("Talk to Housekeeper…") {
+                    appState.showHousekeeper = true
+                }
+                Button("Scan My Mac") {
+                    appState.startScan()
+                }
+                Button("Open Cloudflare Clean VPN") {
+                    appState.showCloudflareVPN = true
+                }
+                Divider()
+                Button("Make Text Bigger (⌘+)") {
+                    let cur = UserDefaults.standard.integer(forKey: "housekeeping.textZoomStep")
+                    UserDefaults.standard.set(min(4, cur + 1), forKey: "housekeeping.textZoomStep")
+                }
+                Button("Make Text Smaller (⌘-)") {
+                    let cur = UserDefaults.standard.integer(forKey: "housekeeping.textZoomStep")
+                    UserDefaults.standard.set(max(-2, cur - 1), forKey: "housekeeping.textZoomStep")
+                }
+                Button("Reset Text Size") {
+                    UserDefaults.standard.set(0, forKey: "housekeeping.textZoomStep")
+                }
+            }
             .animation(.spring(response: 0.32, dampingFraction: 0.65), value: mascotHovered)
-            .help("Hover to wake the Housekeeper, or click to chat.")
+            .help("Click or right-click the Housekeeper to talk, scan, or zoom text.")
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("Housekeeper")

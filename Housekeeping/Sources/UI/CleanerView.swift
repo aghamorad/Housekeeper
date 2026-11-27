@@ -25,6 +25,12 @@ struct CleanerView: View {
             }
         }
         .onAppear { model.scanIfNeeded() }
+        .onReceive(NotificationCenter.default.publisher(for: .housekeepingSelectAll)) { _ in
+            model.selectSafeCaches()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .housekeepingDeselectAll)) { _ in
+            model.clearSelection()
+        }
     }
 
     private var cleanerBrowser: some View {
@@ -52,6 +58,12 @@ struct CleanerView: View {
         .frame(minWidth: 900, maxWidth: .infinity, minHeight: 620, maxHeight: .infinity)
         .preferredColorScheme(style.isRetro ? .light : nil)
         .onAppear { model.scanIfNeeded() }
+        .onReceive(NotificationCenter.default.publisher(for: .housekeepingSelectAll)) { _ in
+            model.selectSafeCaches()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .housekeepingDeselectAll)) { _ in
+            model.clearSelection()
+        }
         .sheet(item: $inspectedCandidate) { candidate in
             candidateInspector(candidate)
                 .housekeepingSurface(style)

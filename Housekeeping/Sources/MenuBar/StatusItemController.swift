@@ -30,6 +30,8 @@ extension Notification.Name {
     static let housekeepingOpenLocalModels = Notification.Name("HousekeepingOpenLocalModels")
     static let housekeepingOpenBackgroundActivity = Notification.Name("HousekeepingOpenBackgroundActivity")
     static let housekeepingOpenQuickJump = Notification.Name("HousekeepingOpenQuickJump")
+    static let housekeepingSelectAll = Notification.Name("HousekeepingSelectAll")
+    static let housekeepingDeselectAll = Notification.Name("HousekeepingDeselectAll")
     /// Opens the housekeeper already holding a topic. The topic itself travels as
     /// the notification's object, because a reading is the reason it was opened.
     static let housekeepingAskAbout = Notification.Name("HousekeepingAskAbout")

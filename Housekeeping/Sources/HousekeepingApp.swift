@@ -57,6 +57,39 @@ struct HousekeepingApp: App {
                 }
                 .keyboardShortcut(.escape, modifiers: [])
                 .disabled(appState.screen == nil)
+
+                Divider()
+
+                Button("Make Text Bigger") {
+                    let current = UserDefaults.standard.integer(forKey: "housekeeping.textZoomStep")
+                    UserDefaults.standard.set(min(4, current + 1), forKey: "housekeeping.textZoomStep")
+                }
+                .keyboardShortcut("+", modifiers: .command)
+
+                Button("Make Text Smaller") {
+                    let current = UserDefaults.standard.integer(forKey: "housekeeping.textZoomStep")
+                    UserDefaults.standard.set(max(-2, current - 1), forKey: "housekeeping.textZoomStep")
+                }
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button("Reset Text Size") {
+                    UserDefaults.standard.set(0, forKey: "housekeeping.textZoomStep")
+                }
+                .keyboardShortcut("0", modifiers: [.command, .option])
+            }
+
+            CommandGroup(after: .pasteboard) {
+                Divider()
+
+                Button("Select All Items") {
+                    NotificationCenter.default.post(name: .housekeepingSelectAll, object: nil)
+                }
+                .keyboardShortcut("a", modifiers: [.command, .option])
+
+                Button("Deselect All Items") {
+                    NotificationCenter.default.post(name: .housekeepingDeselectAll, object: nil)
+                }
+                .keyboardShortcut("d", modifiers: [.command, .option])
             }
 
             // "Housekeeping Help" is the stock item, and with no help book behind

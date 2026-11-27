@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var installingHelper = false
     @Environment(\.uiStyle) private var style
     @AppStorage("housekeeping.appearance") private var appearance = "system"
+    @AppStorage("housekeeping.textZoomStep") private var textZoomStep = 0
     @AppStorage("housekeeping.showInDock") private var showInDock = true
     @AppStorage("housekeeping.startInMenuBarAtLogin") private var startInMenuBarAtLogin = true
 
@@ -38,6 +39,17 @@ struct SettingsView: View {
                     .font(.callout)
                     .foregroundStyle(style.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
+
+                HStack {
+                    Text("Text Size (⌘+ / ⌘-)")
+                    Spacer()
+                    Button("Smaller") { textZoomStep = max(-2, textZoomStep - 1) }
+                        .disabled(textZoomStep <= -2)
+                    Button("Reset") { textZoomStep = 0 }
+                        .disabled(textZoomStep == 0)
+                    Button("Bigger") { textZoomStep = min(4, textZoomStep + 1) }
+                        .disabled(textZoomStep >= 4)
+                }
             }
 
             Section("Startup") {
