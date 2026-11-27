@@ -266,6 +266,26 @@ final class AppModel: ObservableObject {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    func openCommandInTerminal(_ command: String) {
+        let escaped = command
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "Terminal"
+            activate
+            do script "\(escaped)"
+        end tell
+        """
+        if let appleScript = NSAppleScript(source: script) {
+            var errorInfo: NSDictionary?
+            appleScript.executeAndReturnError(&errorInfo)
+            if let errorInfo {
+                copy(command)
+                alertMessage = "Could not open Terminal automatically (\(errorInfo[NSAppleScript.errorBriefMessage] ?? "permission denied")). The command was copied to your clipboard — open Terminal and paste it."
+            }
+        }
+    }
+
     func exportLog() {
         let panel = NSSavePanel()
         panel.title = "Export MediaDock 9 log"
@@ -280,7 +300,12 @@ final class AppModel: ObservableObject {
     }
 
     func diagnosticSummary() -> String {
-        var lines = ["MediaDock 9 diagnostic summary", "macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)"]
+        var lines = [
+            "MediaDock 9 diagnostic summary",
+            "Architecture: \(HardwareProfile.displayLabel)",
+            "Preferred Homebrew: \(HardwareProfile.preferredHomebrewPrefix)",
+            "macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)"
+        ]
         for id in DependencyID.allCases {
             if let status = dependency(id) {
                 lines.append("\(id.title): \(status.version ?? "installed") | \(status.path ?? "not found") | \(status.manager.rawValue)")

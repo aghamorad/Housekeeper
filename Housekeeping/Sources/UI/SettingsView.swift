@@ -155,6 +155,28 @@ struct SettingsView: View {
             }
             .onAppear { helper.refresh() }
 
+            Section("This Mac & Compatibility") {
+                LabeledContent("Chip") {
+                    Text(HardwareProfile.displayLabel)
+                        .font(.callout.monospaced())
+                }
+                LabeledContent("Homebrew Folder") {
+                    Text("\(HardwareProfile.preferredHomebrewPrefix)/bin")
+                        .font(.callout.monospaced())
+                        .textSelection(.enabled)
+                }
+                LabeledContent("Bundled Media Runtime") {
+                    Text(HardwareProfile.bundledUniversalBinPath != nil ? "Universal (Intel + Apple Silicon)" : "Not found")
+                        .foregroundStyle(HardwareProfile.bundledUniversalBinPath != nil ? .green : .secondary)
+                }
+                Text(HardwareProfile.isIntel
+                     ? "Housekeeper automatically runs in Intel mode: Clean Up, Space Lens, Uninstaller, Media Studio (with bundled FFmpeg), Bookbind Studio, Cloudflare Clean VPN, Route Sweep, Speed Test, DNS Switcher, Fan Control (SMC), and GGUF local chat all work natively. Only Apple Intelligence and MLX are Apple-Silicon-only."
+                     : "Housekeeper runs natively on Apple Silicon with Metal GPU acceleration for local models and universal bundled runtimes.")
+                    .font(.callout)
+                    .foregroundStyle(style.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Section("Scanning") {
                 Toggle("Also look in folders that belong to no app", isOn: Binding(
                     get: { appState.deepSweep },

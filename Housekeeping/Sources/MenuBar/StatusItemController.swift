@@ -25,6 +25,10 @@ extension Notification.Name {
     static let housekeepingOpenDNSSwitcher = Notification.Name("HousekeepingOpenDNSSwitcher")
     static let housekeepingOpenSpeedTest = Notification.Name("HousekeepingOpenSpeedTest")
     static let housekeepingOpenRouteSweep = Notification.Name("HousekeepingOpenRouteSweep")
+    static let housekeepingOpenCloudflareVPN = Notification.Name("HousekeepingOpenCloudflareVPN")
+    static let housekeepingOpenCleanUp = Notification.Name("HousekeepingOpenCleanUp")
+    static let housekeepingOpenLocalModels = Notification.Name("HousekeepingOpenLocalModels")
+    static let housekeepingOpenBackgroundActivity = Notification.Name("HousekeepingOpenBackgroundActivity")
     static let housekeepingOpenQuickJump = Notification.Name("HousekeepingOpenQuickJump")
     /// Opens the housekeeper already holding a topic. The topic itself travels as
     /// the notification's object, because a reading is the reason it was opened.
@@ -428,6 +432,14 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             onBatteryHealth: { [weak self] in self?.openBatteryHealth() },
             onSpeedTest: { [weak self] in self?.openSpeedTest() },
             onRouteSweep: { [weak self] in self?.openRouteSweep() },
+            onCloudflareVPN: { [weak self] in self?.openCloudflareVPN() },
+            onCleanUp: { [weak self] in self?.openCleanUp() },
+            onDNS: { [weak self] in self?.openDNSSwitcher() },
+            onVPNTunnels: { [weak self] in self?.openVPNTunnels() },
+            onUninstaller: { [weak self] in self?.openUninstaller() },
+            onLocalModels: { [weak self] in self?.openLocalModels() },
+            onSpoofLocation: { [weak self] in self?.spoofLocation() },
+            onBackgroundActivity: { [weak self] in self?.openBackgroundActivity() },
             onExplain: { [weak self] topic in self?.explain(topic) },
             onResize: { [weak self] height in self?.resize(to: height) }
         )
@@ -533,18 +545,29 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         menu.addItem(status)
         menu.addItem(entry("Refresh Health Status", #selector(refreshHealthMenu)))
         menu.addItem(.separator())
-        menu.addItem(entry("Open Housekeeping", #selector(openMainWindow)))
+        menu.addItem(entry("Open Housekeeper", #selector(openMainWindow)))
         menu.addItem(entry("Talk to the Housekeeper", #selector(askTheHousekeeper)))
         menu.addItem(.separator())
+        menu.addItem(entry("Clean Up…", #selector(openCleanUp)))
         menu.addItem(entry("Scan My Mac", #selector(scanNow)))
+        menu.addItem(entry("Space Lens…", #selector(openDiskMenu)))
         menu.addItem(entry("App Uninstaller…", #selector(openUninstaller)))
+        menu.addItem(entry("Update Apps…", #selector(openUpdatesMenu)))
+        menu.addItem(.separator())
+        menu.addItem(entry("Cooling & Fans…", #selector(openFansMenu)))
         menu.addItem(entry("Battery Health…", #selector(openBatteryHealthMenu)))
-        menu.addItem(entry("Spoof Location…", #selector(spoofLocation)))
-        menu.addItem(entry("MediaDock 9…", #selector(openMediaDock)))
-        menu.addItem(entry("Bookbind…", #selector(openBookbind)))
+        menu.addItem(entry("Background Activity…", #selector(openBackgroundActivity)))
+        menu.addItem(entry("Local AI Models…", #selector(openLocalModels)))
+        menu.addItem(.separator())
+        menu.addItem(entry("Cloudflare Clean VPN…", #selector(openCloudflareVPN)))
+        menu.addItem(entry("Route Sweep…", #selector(openRouteSweep)))
+        menu.addItem(entry("Speed Test…", #selector(openSpeedTest)))
         menu.addItem(entry("VPN Tunnels…", #selector(openVPNTunnels)))
         menu.addItem(entry("DNS Easy Switcher…", #selector(openDNSSwitcher)))
-        menu.addItem(entry("Speed Test…", #selector(openSpeedTest)))
+        menu.addItem(entry("Spoof Location…", #selector(spoofLocation)))
+        menu.addItem(.separator())
+        menu.addItem(entry("MediaDock 9…", #selector(openMediaDock)))
+        menu.addItem(entry("Bookbind…", #selector(openBookbind)))
         menu.addItem(.separator())
         menu.addItem(entry("Quit Housekeeper", #selector(quit)))
 
@@ -631,6 +654,42 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         WindowOpener.shared.withWindow {
             NotificationCenter.default.post(name: .housekeepingOpenRouteSweep, object: nil)
         }
+    }
+
+    @objc private func openCloudflareVPN() {
+        WindowOpener.shared.withWindow {
+            NotificationCenter.default.post(name: .housekeepingOpenCloudflareVPN, object: nil)
+        }
+    }
+
+    @objc private func openCleanUp() {
+        WindowOpener.shared.withWindow {
+            NotificationCenter.default.post(name: .housekeepingOpenCleanUp, object: nil)
+        }
+    }
+
+    @objc private func openLocalModels() {
+        WindowOpener.shared.withWindow {
+            NotificationCenter.default.post(name: .housekeepingOpenLocalModels, object: nil)
+        }
+    }
+
+    @objc private func openBackgroundActivity() {
+        WindowOpener.shared.withWindow {
+            NotificationCenter.default.post(name: .housekeepingOpenBackgroundActivity, object: nil)
+        }
+    }
+
+    @objc private func openDiskMenu() {
+        openDisk()
+    }
+
+    @objc private func openFansMenu() {
+        openFans()
+    }
+
+    @objc private func openUpdatesMenu() {
+        openUpdates()
     }
 
     @objc private func quit() {

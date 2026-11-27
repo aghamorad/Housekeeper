@@ -208,12 +208,60 @@ struct SetupView: View {
     @Environment(\.mediaDockSkin) private var skin
     @EnvironmentObject private var model: AppModel
 
+    private let homebrewInstallCommand = #"/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)""#
+
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
+                RetroPanel(title: "Detected Mac · \(HardwareProfile.displayLabel)") {
+                    HStack(alignment: .top, spacing: 10) {
+                        StatusLight(color: skin.green)
+                            .padding(.top, 3)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(HardwareProfile.isIntel
+                                 ? "Intel Mac detected automatically. MediaDock searches /usr/local/bin first, skips Apple-Silicon-only binaries, and uses Housekeeper's built-in universal FFmpeg out of the box."
+                                 : "Apple Silicon Mac detected automatically. MediaDock searches /opt/homebrew/bin first and falls back to /usr/local/bin and Housekeeper's built-in universal FFmpeg.")
+                                .font(skin.font(11))
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text("Homebrew folder for this Mac: \(HardwareProfile.preferredHomebrewPrefix)/bin")
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(skin.ink.opacity(0.75))
+                        }
+                        Spacer()
+                    }
+
+                    if HardwareProfile.isIntel || model.dependency(.homebrew)?.isInstalled != true || model.dependency(.ytDlp)?.isInstalled != true {
+                        ThinRule()
+                        Text(HardwareProfile.isIntel ? "Quick Intel Setup Guide (4 steps)" : "Quick Terminal Setup (if Homebrew is missing)")
+                            .font(skin.font(11, weight: .bold))
+                        StepLine(number: 1, text: "If macOS has never installed command-line tools on this Mac, run: xcode-select --install")
+                        StepLine(number: 2, text: "Install Homebrew in Terminal (it needs your Mac password, so Terminal works better than a background installer). On Intel it installs to /usr/local.")
+                        StepLine(number: 3, text: "Install the downloaders with Homebrew & pipx: yt-dlp, deno, pipx, spotdl, and gamdl. FFmpeg is already bundled inside Housekeeper.")
+                        StepLine(number: 4, text: "Come back here and press Rescan. Every row will turn green.")
+
+                        HStack(spacing: 8) {
+                            if model.dependency(.homebrew)?.isInstalled != true {
+                                Button("Install Homebrew in Terminal") {
+                                    model.openCommandInTerminal(homebrewInstallCommand)
+                                }
+                                .buttonStyle(MediaDockButtonStyle(prominent: true))
+                            }
+                            Button("Run All-in-One Setup in Terminal") {
+                                model.openCommandInTerminal(HardwareProfile.mediaDockQuickSetupCommand)
+                            }
+                            .buttonStyle(MediaDockButtonStyle(prominent: model.dependency(.homebrew)?.isInstalled == true))
+                            Button("Copy Setup Command") {
+                                model.copy(HardwareProfile.mediaDockQuickSetupCommand)
+                            }
+                            .buttonStyle(MediaDockButtonStyle())
+                            Spacer()
+                        }
+                    }
+                }
+
                 RetroPanel(title: "Setup controls") {
                     HStack {
-                        Text("MediaDock checks standard Apple Silicon, Intel Homebrew, pipx, and user-local command paths.")
+                        Text("MediaDock checks \(HardwareProfile.preferredHomebrewPrefix)/bin first, then pipx, user-local, and bundled universal tool paths.")
                             .font(skin.font(11))
                         Spacer()
                         Button("Rescan") { model.refreshDependencies() }
@@ -282,6 +330,10 @@ private struct DependencyRow: View {
                 Button("Install…") { model.requestInstall(dependencyID) }
                     .buttonStyle(MediaDockButtonStyle())
                     .disabled(model.runner.isRunning || model.isScanning || installBlocked)
+            } else if status?.manager == .bundled {
+                Text("BUNDLED")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(skin.green)
             } else if status?.manager == .external {
                 Text("UPDATE MANUALLY")
                     .font(.system(size: 9, weight: .bold, design: .monospaced))

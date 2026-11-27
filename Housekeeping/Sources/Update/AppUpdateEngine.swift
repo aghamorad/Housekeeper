@@ -70,14 +70,20 @@ final class AppUpdateEngine {
     }
 
     static func findMas(fileManager: FileManager = .default) -> String? {
-        for candidate in ["/opt/homebrew/bin/mas", "/usr/local/bin/mas"]
-        where fileManager.isExecutableFile(atPath: candidate) {
-            return candidate
+        for dir in HardwareProfile.orderedHomebrewBinPaths {
+            let candidate = "\(dir)/mas"
+            if fileManager.isExecutableFile(atPath: candidate),
+               HardwareProfile.isExecutableCompatibleWithCurrentArch(candidate) {
+                return candidate
+            }
         }
         let searchPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
         for directory in searchPath.split(separator: ":") {
             let candidate = "\(directory)/mas"
-            if fileManager.isExecutableFile(atPath: candidate) { return candidate }
+            if fileManager.isExecutableFile(atPath: candidate),
+               HardwareProfile.isExecutableCompatibleWithCurrentArch(candidate) {
+                return candidate
+            }
         }
         return nil
     }

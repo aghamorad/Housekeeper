@@ -211,6 +211,7 @@ enum DependencyID: String, CaseIterable, Identifiable {
 }
 
 enum InstallManager: String {
+    case bundled = "Bundled"
     case homebrew = "Homebrew"
     case pipx = "pipx"
     case external = "External"

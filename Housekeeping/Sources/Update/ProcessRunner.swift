@@ -49,7 +49,11 @@ final class ProcessRunner: @unchecked Sendable {
     /// it on Apple silicon and on Intel; the `PATH` search is the last resort for
     /// anyone who moved it.
     static func brewPath(fileManager: FileManager = .default) -> String? {
+        #if arch(arm64)
         let fixed = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+        #else
+        let fixed = ["/usr/local/bin/brew", "/opt/homebrew/bin/brew"]
+        #endif
         for candidate in fixed where fileManager.isExecutableFile(atPath: candidate) {
             return candidate
         }

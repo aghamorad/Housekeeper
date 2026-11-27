@@ -3,20 +3,24 @@ import Foundation
 enum RuntimeEnvironment {
     static var searchPaths: [String] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let standard = [
-            "/opt/homebrew/bin",
-            "/opt/homebrew/sbin",
-            "/usr/local/bin",
-            "/usr/local/sbin",
+        var standard = HardwareProfile.orderedHomebrewBinPaths + [
             "\(home)/.local/bin",
+            "\(home)/.deno/bin",
+            "\(home)/Library/Python/3.14/bin",
             "\(home)/Library/Python/3.13/bin",
             "\(home)/Library/Python/3.12/bin",
             "\(home)/Library/Python/3.11/bin",
+            "\(home)/Library/Python/3.10/bin",
             "/usr/bin",
             "/bin",
             "/usr/sbin",
             "/sbin"
         ]
+        // Fall back to Housekeeper's bundled universal (Intel + Apple Silicon)
+        // ffmpeg/ffprobe so Intel Macs work immediately without Homebrew ffmpeg.
+        if let bundled = HardwareProfile.bundledUniversalBinPath {
+            standard.append(bundled)
+        }
         let inherited = ProcessInfo.processInfo.environment["PATH"]?.split(separator: ":").map(String.init) ?? []
         return Array(NSOrderedSet(array: standard + inherited)) as? [String] ?? standard + inherited
     }
@@ -32,7 +36,10 @@ enum RuntimeEnvironment {
     static func locate(_ executable: String) -> String? {
         for directory in searchPaths {
             let path = (directory as NSString).appendingPathComponent(executable)
-            if FileManager.default.isExecutableFile(atPath: path) { return path }
+            if FileManager.default.isExecutableFile(atPath: path),
+               HardwareProfile.isExecutableCompatibleWithCurrentArch(path) {
+                return path
+            }
         }
         return nil
     }
@@ -99,7 +106,9 @@ enum DependencyScanner {
                 }
 
                 let manager: InstallManager
-                if dependency == .homebrew, path != nil {
+                if let path, let bundledDir = HardwareProfile.bundledUniversalBinPath, path.hasPrefix(bundledDir) {
+                    manager = .bundled
+                } else if dependency == .homebrew, path != nil {
                     manager = .homebrew
                 } else if let formula = dependency.brewFormula, let brewPath, path != nil {
                     let result = runShortCommand(brewPath, ["list", "--versions", formula])

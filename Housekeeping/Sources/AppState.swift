@@ -62,7 +62,7 @@ final class AppState: ObservableObject {
         case cleanupConfirmation, guidedCleanup, cleanupPreview, quarantine
         case protectionList, diskBrowser, reconcile, updateList, setupCheck
         case housekeeper, routes, phone, mediaDock, bookbind, selfUpdate
-        case clean, localModels, fanControl, uninstaller, appRepair, batteryHealth, vpnTunnels, dnsSwitcher, speedTest, backgroundActivity
+        case clean, localModels, fanControl, uninstaller, appRepair, batteryHealth, vpnTunnels, dnsSwitcher, speedTest, cloudflareVPN, backgroundActivity
 
         var id: String { rawValue }
 
@@ -70,7 +70,7 @@ final class AppState: ObservableObject {
             switch self {
             case .clean, .diskBrowser, .reconcile, .updateList, .setupCheck, .routes,
                  .phone, .mediaDock, .bookbind, .quarantine, .protectionList,
-                 .localModels, .fanControl, .uninstaller, .appRepair, .batteryHealth, .vpnTunnels, .dnsSwitcher, .speedTest, .backgroundActivity: return true
+                 .localModels, .fanControl, .uninstaller, .appRepair, .batteryHealth, .vpnTunnels, .dnsSwitcher, .speedTest, .cloudflareVPN, .backgroundActivity: return true
             default: return false
             }
         }
@@ -155,6 +155,7 @@ final class AppState: ObservableObject {
     lazy var reconciler = ReconcileModel()
     lazy var routeTester = RoutesModel()
     lazy var phoneController = PhoneModel()
+    lazy var cloudflareVPN = CloudflareVPNEngine()
 
     private func show(_ which: Screen, _ on: Bool) {
         if on {
@@ -259,6 +260,10 @@ final class AppState: ObservableObject {
     var showSpeedTest: Bool {
         get { screen == .speedTest }
         set { show(.speedTest, newValue) }
+    }
+    var showCloudflareVPN: Bool {
+        get { screen == .cloudflareVPN }
+        set { show(.cloudflareVPN, newValue) }
     }
     /// Whether the two-folder comparison is open. Only the flag lives here, for
     /// the same reason as the disk browser: which pair is on screen and what the

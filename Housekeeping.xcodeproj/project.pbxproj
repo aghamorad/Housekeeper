@@ -172,6 +172,9 @@
 		F1000207 /* BackgroundReview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2000207 /* BackgroundReview.swift */; };
 		F1000208 /* BackgroundWidgetControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2000208 /* BackgroundWidgetControl.swift */; };
 		F1000209 /* SpeedTestEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2000209 /* SpeedTestEngine.swift */; };
+		F1000222 /* CloudflareVPNView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2000222 /* CloudflareVPNView.swift */; };
+		F1000221 /* CloudflareVPNEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2000221 /* CloudflareVPNEngine.swift */; };
+		F1000220 /* CloudflareVPNModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2000220 /* CloudflareVPNModels.swift */; };
 		F100020A /* RouteExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F200020A /* RouteExporter.swift */; };
 		F100020B /* BackgroundActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F200020B /* BackgroundActivityView.swift */; };
 		F100020C /* BackgroundReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F200020C /* BackgroundReviewView.swift */; };
@@ -347,6 +350,9 @@
 		F2000207 /* BackgroundReview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Network/BackgroundReview.swift; sourceTree = "<group>"; };
 		F2000208 /* BackgroundWidgetControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Network/BackgroundWidgetControl.swift; sourceTree = "<group>"; };
 		F2000209 /* SpeedTestEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Network/SpeedTestEngine.swift; sourceTree = "<group>"; };
+		F2000222 /* CloudflareVPNView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/UI/CloudflareVPNView.swift; sourceTree = "<group>"; };
+		F2000221 /* CloudflareVPNEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Network/CloudflareVPNEngine.swift; sourceTree = "<group>"; };
+		F2000220 /* CloudflareVPNModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Network/CloudflareVPNModels.swift; sourceTree = "<group>"; };
 		F200020A /* RouteExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Routes/RouteExporter.swift; sourceTree = "<group>"; };
 		F200020B /* BackgroundActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/UI/BackgroundActivityView.swift; sourceTree = "<group>"; };
 		F200020C /* BackgroundReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/UI/BackgroundReviewView.swift; sourceTree = "<group>"; };
@@ -384,6 +390,9 @@
 				F2000207,
 				F2000208,
 				F2000209,
+				F2000222,
+				F2000221,
+				F2000220,
 				F200020A,
 				F200020B,
 				F200020C,
@@ -613,6 +622,9 @@
 				F1000207,
 				F1000208,
 				F1000209,
+				F1000222,
+				F1000221,
+				F1000220,
 				F100020A,
 				F100020B,
 				F100020C,

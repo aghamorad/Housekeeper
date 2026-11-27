@@ -51,6 +51,7 @@ struct ContentView: View {
             case .backgroundActivity: BackgroundActivityView()
             case .dnsSwitcher: DNSConfigView()
             case .speedTest: SpeedTestView()
+            case .cloudflareVPN: CloudflareVPNView(engine: appState.cloudflareVPN)
             }
         }
         .environment(\.uiStyle, style)
@@ -132,7 +133,9 @@ struct ContentView: View {
                 Button("Replace It Now") {
                     Task { try? await PrivilegedHelper.shared.install() }
                 }
-                Button("Later", role: .cancel) {}
+                Button("Later", role: .cancel) {
+                    showLegacyHelperAlert = false
+                }
             } message: {
                 Text("The previous version installed a background helper inside the app folder, which your own account can modify. This version moves it to a system folder that only the system can write to, and checks that the program calling it is Housekeeper's signed app. One administrator password is needed, once.")
             }
@@ -165,6 +168,7 @@ struct ContentView: View {
         case .vpnTunnels: return "VPN Tunnels"
         case .dnsSwitcher: return "DNS Switcher"
         case .speedTest: return "Speed Test"
+        case .cloudflareVPN: return "Cloudflare Clean VPN"
         case .backgroundActivity: return "Background Activity"
         default: return "Housekeeper"
         }
@@ -191,6 +195,7 @@ struct ContentView: View {
         case .vpnTunnels: return "Inspect active utun tunnels and services"
         case .dnsSwitcher: return "1-click DNS presets and reset"
         case .speedTest: return "Download, upload, ping, and jitter"
+        case .cloudflareVPN: return "AmneziaWG WARP & Clean Cloudflare IP VPN configs"
         case .backgroundActivity: return "Inspect running tasks and login items"
         default: return ""
         }
@@ -224,6 +229,9 @@ struct ContentView: View {
             },
             QuickJumpDestination(id: "speed", title: "Speed Test", subtitle: "Measure download, upload & ping", icon: "speedometer", keywords: "internet speed mbps ping") {
                 appState.showSpeedTest = true
+            },
+            QuickJumpDestination(id: "cloudflare-vpn", title: "Cloudflare Clean VPN", subtitle: "AmneziaWG WARP & Clean IP VLESS configs", icon: "shield.lefthalf.filled.badge.checkmark", keywords: "cloudflare warp amnezia bpb vless clean ip vpn fragment") {
+                appState.showCloudflareVPN = true
             },
             QuickJumpDestination(id: "dns", title: "DNS Switcher", subtitle: "1-click DNS presets", icon: "globe.badge.chevron.backward", keywords: "dns 403 network") {
                 appState.showDNSSwitcher = true
@@ -330,6 +338,18 @@ private struct ToolNotificationsModifier: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenRouteSweep)) { _ in
                 appState.showRoutes = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenCloudflareVPN)) { _ in
+                appState.showCloudflareVPN = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenCleanUp)) { _ in
+                appState.showClean = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenLocalModels)) { _ in
+                appState.showLocalModels = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenBackgroundActivity)) { _ in
+                appState.showBackgroundActivity = true
             }
     }
 }
@@ -836,6 +856,9 @@ private struct JobBar: View {
 
                     // Category 4: Network & Routes
                     sidebarCategory("Network & Routes") {
+                        if let job = allJobs.first(where: { $0.id == "cloudflare-vpn" }) {
+                            sidebarJob(job, customTitle: "Cloudflare Clean VPN", customIcon: "shield.lefthalf.filled.badge.checkmark")
+                        }
                         if let job = allJobs.first(where: { $0.id == "speed-test" }) {
                             sidebarJob(job, customTitle: "Speed Test", customIcon: "speedometer")
                         }
@@ -1086,6 +1109,14 @@ private struct JobBar: View {
     /// the reason the warning in its help text is not a formality.
     private var routeJobs: [Job] {
         [
+            Job(
+                id: "cloudflare-vpn",
+                title: "Cloudflare Clean VPN",
+                systemImage: "shield.lefthalf.filled.badge.checkmark",
+                zone: .route,
+                help: "Generate fresh AmneziaWG WARP configs or connect your Cloudflare token to scan clean Cloudflare IPv4 addresses and build VLESS + Fragment VPN configs.",
+                action: { appState.showCloudflareVPN = true }
+            ),
             Job(
                 id: "speed-test",
                 title: "Speed Test",

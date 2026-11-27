@@ -210,6 +210,11 @@ struct HousekeepingApp: App {
                     appState.showSpeedTest = true
                 }
 
+                Button("Cloudflare Clean VPN…") {
+                    appState.showCloudflareVPN = true
+                }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+
                 // The one screen about the models themselves rather than the disk
                 // they sit on: what is installed, what is in memory, and the way
                 // out of it when the machine has none left.
@@ -265,7 +270,7 @@ struct HousekeepingApp: App {
                 Button("MediaDock 9…") {
                     appState.showMediaDock = true
                 }
-                .keyboardShortcut("d", modifiers: [.command, .shift])
+                .keyboardShortcut("j", modifiers: [.command, .shift])
 
                 Button("Bookbind…") {
                     appState.showBookbind = true

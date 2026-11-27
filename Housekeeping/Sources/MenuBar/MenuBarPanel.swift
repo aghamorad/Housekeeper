@@ -61,6 +61,14 @@ struct MenuBarPanel: View {
     var onBatteryHealth: (() -> Void)? = nil
     var onSpeedTest: (() -> Void)? = nil
     var onRouteSweep: (() -> Void)? = nil
+    var onCloudflareVPN: (() -> Void)? = nil
+    var onCleanUp: (() -> Void)? = nil
+    var onDNS: (() -> Void)? = nil
+    var onVPNTunnels: (() -> Void)? = nil
+    var onUninstaller: (() -> Void)? = nil
+    var onLocalModels: (() -> Void)? = nil
+    var onSpoofLocation: (() -> Void)? = nil
+    var onBackgroundActivity: (() -> Void)? = nil
     let onExplain: (HousekeeperTopic) -> Void
     let onResize: (CGFloat) -> Void
 
@@ -79,6 +87,7 @@ struct MenuBarPanel: View {
     @State private var isMemoryExpanded: Bool = false
     @State private var isProcessorExpanded: Bool = false
     @State private var showAdvancedSensors: Bool = false
+    @State private var showMoreTools: Bool = false
 
     private var snapshot: VitalsSnapshot { vitals.snapshot }
 
@@ -1458,18 +1467,73 @@ struct MenuBarPanel: View {
                 )
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 DoorButton(title: "Open App", icon: "macwindow", action: leaving(onOpen))
                 DoorButton(title: "Free RAM", icon: "memorychip", action: { _ = vitals.freeRAM() })
+                DoorButton(title: "Clean Up", icon: "sparkles", action: leaving(onCleanUp ?? onScan))
+                DoorButton(title: "Space Lens", icon: "internaldrive", action: leaving(onDisk))
+            }
+
+            HStack(spacing: 6) {
+                if let onCloudflareVPN {
+                    DoorButton(title: "Clean VPN", icon: "shield.lefthalf.filled.badge.checkmark", action: leaving(onCloudflareVPN))
+                } else {
+                    DoorButton(title: "Scan Mac", icon: "magnifyingglass", action: leaving(onScan))
+                }
+                if let onRouteSweep {
+                    DoorButton(title: "Route Sweep", icon: "network", action: leaving(onRouteSweep))
+                } else {
+                    DoorButton(title: "Ask AI", icon: "bubble.left.and.text.bubble.right", action: leaving(onAsk))
+                }
                 if let onSpeedTest {
                     DoorButton(title: "Speed Test", icon: "speedometer", action: leaving(onSpeedTest))
                 } else {
-                    DoorButton(title: "Clean", icon: "sparkles", action: leaving(onScan))
+                    DoorButton(title: "Updates", icon: "arrow.triangle.2.circlepath", action: leaving(onUpdates))
                 }
-                if let onRouteSweep {
-                    DoorButton(title: "Route Sweep", icon: "point.topleft.down.curvedto.point.bottomright.up", action: leaving(onRouteSweep))
+                if let onDNS {
+                    DoorButton(title: "DNS", icon: "globe.badge.chevron.backward", action: leaving(onDNS))
                 } else {
                     DoorButton(title: "Cooling", icon: "fan.fill", action: leaving(onFans))
+                }
+            }
+
+            HStack(spacing: 6) {
+                DoorButton(title: "MediaDock", icon: "play.rectangle.fill", action: leaving(onMediaDock))
+                DoorButton(title: "Bookbind", icon: "book.closed.fill", action: leaving(onBookbind))
+                DoorButton(title: "Cooling", icon: "fan.fill", action: leaving(onFans))
+                DoorButton(
+                    title: showMoreTools ? "Less" : "More Tools",
+                    icon: showMoreTools ? "chevron.up" : "square.grid.2x2",
+                    action: { showMoreTools.toggle() }
+                )
+            }
+
+            if showMoreTools {
+                VStack(spacing: 6) {
+                    HStack(spacing: 6) {
+                        if let onVPNTunnels {
+                            DoorButton(title: "VPNs", icon: "lock.shield", action: leaving(onVPNTunnels))
+                        }
+                        if let onBatteryHealth {
+                            DoorButton(title: "Battery", icon: "battery.100.bolt", action: leaving(onBatteryHealth))
+                        }
+                        if let onUninstaller {
+                            DoorButton(title: "Uninstall", icon: "xmark.app", action: leaving(onUninstaller))
+                        }
+                        if let onLocalModels {
+                            DoorButton(title: "Local AI", icon: "cpu", action: leaving(onLocalModels))
+                        }
+                    }
+                    HStack(spacing: 6) {
+                        if let onSpoofLocation {
+                            DoorButton(title: "Spoof GPS", icon: "location.slash", action: leaving(onSpoofLocation))
+                        }
+                        if let onBackgroundActivity {
+                            DoorButton(title: "Activity", icon: "list.bullet.rectangle", action: leaving(onBackgroundActivity))
+                        }
+                        DoorButton(title: "Scan Mac", icon: "magnifyingglass", action: leaving(onScan))
+                        DoorButton(title: "Ask AI", icon: "bubble.left.and.text.bubble.right", action: leaving(onAsk))
+                    }
                 }
             }
 
@@ -1574,7 +1638,7 @@ struct MenuBarPanel: View {
     }
 
     private var credit: some View {
-        Text("Made by Morad · Housekeeping \(version)")
+        Text("Made by Morad · Housekeeper \(version) · \(HardwareProfile.kind)")
             .font(.system(size: 9.5, design: .monospaced))
             .foregroundStyle(HousekeepingInk.secondaryText.opacity(0.55))
             .frame(maxWidth: .infinity)
@@ -1582,7 +1646,7 @@ struct MenuBarPanel: View {
     }
 
     private var version: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.24.1"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.34.0"
     }
 }
 

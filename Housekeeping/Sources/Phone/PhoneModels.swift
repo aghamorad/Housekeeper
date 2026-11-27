@@ -121,14 +121,13 @@ enum PhoneTool {
     /// tried before `PATH`. `NSHomeDirectory()` rather than a literal path keeps
     /// this working for any account.
     static func executable(fileManager: FileManager = .default) -> String? {
-        var candidates = [
-            "\(NSHomeDirectory())/.local/bin/pymobiledevice3",
-            "/opt/homebrew/bin/pymobiledevice3",
-            "/usr/local/bin/pymobiledevice3"
-        ]
+        var candidates = ["\(NSHomeDirectory())/.local/bin/pymobiledevice3"]
+        candidates += HardwareProfile.orderedHomebrewBinPaths.map { "\($0)/pymobiledevice3" }
         let searchPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
         candidates += searchPath.split(separator: ":").map { "\($0)/pymobiledevice3" }
-        return candidates.first { fileManager.isExecutableFile(atPath: $0) }
+        return candidates.first {
+            fileManager.isExecutableFile(atPath: $0) && HardwareProfile.isExecutableCompatibleWithCurrentArch($0)
+        }
     }
 
     static let installHint = "pipx install pymobiledevice3"

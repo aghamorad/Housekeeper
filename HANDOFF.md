@@ -1,3 +1,20 @@
+## 2026-11-27 — Housekeeper 0.34.0 (71): Cloudflare Clean VPN Studio, Intel Auto-Detection & MediaDock Compatibility, Kitchen-Sink Menu Bar & Debugging
+
+**What went into it:**
+1. **Cloudflare Clean VPN Studio (`Network/CloudflareVPNModels.swift`, `Network/CloudflareVPNEngine.swift`, `UI/CloudflareVPNView.swift`):**
+   - **Tab 1 — AmneziaWG WARP (Free, Zero Account, Zero Worker Abuse-Flag Risk):** Native `CryptoKit` Curve25519 keypair generation, live Cloudflare WARP registration (`api.cloudflareclient.com/v0a4005/reg`), curated WARP endpoints (`162.159.192/193/195.x`, `188.114.96–99.x` on ports `2408`/`500`/`1701`/`4500`), Light/Heavy/Custom junk packets, MTU/Keepalive, Amnezia 1.5 (`I1`) and 3.0/3.1 (`S3`/`S4`), 1-click Copy, Save `.conf`, and native `CoreImage` QR code.
+   - **Tab 2 — Cloudflare Token & Clean IP Scanner (VLESS + TLS Fragment):** 3-step guided Cloudflare API token setup (stored in macOS Keychain), token verification + account/subdomain/existing-workers discovery, neutral-name private Worker deploy + 1-click Delete Worker (for Error 1101 / abuse-flag hygiene), real concurrent Cloudflare IPv4 TLS handshake scanner (`Quick 16` / `Standard 32` / `Thorough 64`), `vless://` links, TLS-Fragment Xray/sing-box JSON presets (`MCI / Light`, `Irancell / Heavy`), Iranian carrier stopgaps (`mci.ircf.space`, `mtn.ircf.space`, `rtl.ircf.space`), and QR code sharing.
+   - Wired into sidebar (**Network & Routes** → **Cloudflare Clean VPN**), Quick Jump (`⌘/`), Jobs menu (`⌘⇧C`), Menu Bar popover (**Clean VPN**), and right-click status menu.
+2. **Intel Mac Auto-Detection & MediaDock Compatibility (`Core/HardwareProfile.swift`, `MediaDock/{MediaDockModels,CommandRuntime,AppModel,MainViews}.swift`, `Update/{ProcessRunner,AppUpdateEngine}.swift`, `Phone/PhoneModels.swift`, `UI/SettingsView.swift`):**
+   - `HardwareProfile` now auto-detects `Intel Mac (x86_64)` vs `Apple Silicon (arm64)`, orders `/usr/local/bin` before `/opt/homebrew/bin` on Intel, inspects Mach-O headers (`isExecutableCompatibleWithCurrentArch`) so Intel Macs never crash on migrated `arm64`-only binaries, and exposes Housekeeper's bundled universal (`arm64` + `x86_64`) `Bookbind/bin/ffmpeg` as an automatic fallback (`BUNDLED`) for MediaDock.
+   - MediaDock **Setup** now shows an auto-detected Mac architecture banner, a 4-step Intel/Terminal setup guide, and 1-click **Install Homebrew in Terminal** / **Run All-in-One Setup in Terminal** buttons.
+   - **Settings** gained a **This Mac & Compatibility** section showing detected chip, Homebrew folder, bundled universal runtime, and Intel feature availability.
+3. **Kitchen-Sink Menu Bar & Debugging (`MenuBar/{MenuBarPanel,StatusItemController}.swift`, `UI/ContentView.swift`, `HousekeepingApp.swift`):**
+   - Expanded `MenuBarPanel` from 4 buttons to a **12-button Quick Actions grid** (`Open App`, `Free RAM`, `Clean Up`, `Space Lens`, `Clean VPN`, `Route Sweep`, `Speed Test`, `DNS`, `MediaDock`, `Bookbind`, `Cooling`, `More Tools`) plus an expandable **More Tools** section (`VPNs`, `Battery`, `Uninstall`, `Local AI`, `Spoof GPS`, `Activity`, `Scan Mac`, `Ask AI`), keeping `0.0%` idle CPU.
+   - Expanded the right-click status menu with all grouped kitchen-sink tools and updated `"Housekeeping"` strings to `"Housekeeper"`.
+   - Fixed inert handler `UI/ContentView.swift:135` (`Button("Later", role: .cancel) { showLegacyHelperAlert = false }`), fixed duplicate `⌘⇧D` shortcut collision in `HousekeepingApp.swift` (`MediaDock 9…` → `⌘⇧J`), and synced all 3 new Swift files into `Housekeeping.xcodeproj/project.pbxproj`.
+4. **Verified:** `./script/typecheck.sh` (`-warnings-as-errors`), `python3 script/audit_ui_controls.py` (`0` inert controls across 142 Swift files), `./script/test_safety.sh` (`381` assertions), `python3 script/test_background_mcp.py` (`85` assertions), and universal `./script/package_release.sh`. Guide updated at `~/Desktop/Housekeeper — a noob's guide.md`.
+
 ## 2026-11-25 — Housekeeper 0.33.0 (70): Fix Permissions deleted, icon made full-bleed
 
 **Why.** Morad asked for two specific things after 0.32.3: the "Fix Permissions" option was
