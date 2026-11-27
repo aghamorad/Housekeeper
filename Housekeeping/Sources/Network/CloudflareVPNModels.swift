@@ -101,23 +101,26 @@ struct WarpEndpointCandidate: Identifiable, Hashable {
     var endpointString: String { "\(host):\(port)" }
 
     static let curated: [WarpEndpointCandidate] = [
-        WarpEndpointCandidate(id: "engage-2408", host: "engage.cloudflareclient.com", port: 2408, label: "engage.cloudflareclient.com:2408 (Main)"),
-        WarpEndpointCandidate(id: "162-192-1-2408", host: "162.159.192.1", port: 2408, label: "162.159.192.1:2408"),
-        WarpEndpointCandidate(id: "162-193-1-2408", host: "162.159.193.1", port: 2408, label: "162.159.193.1:2408"),
-        WarpEndpointCandidate(id: "162-195-1-2408", host: "162.159.195.1", port: 2408, label: "162.159.195.1:2408"),
-        WarpEndpointCandidate(id: "162-193-5-2408", host: "162.159.193.5", port: 2408, label: "162.159.193.5:2408"),
-        WarpEndpointCandidate(id: "162-193-10-2408", host: "162.159.193.10", port: 2408, label: "162.159.193.10:2408"),
-        WarpEndpointCandidate(id: "162-193-47-2408", host: "162.159.193.47", port: 2408, label: "162.159.193.47:2408"),
-        WarpEndpointCandidate(id: "162-193-1-500", host: "162.159.193.1", port: 500, label: "162.159.193.1:500"),
-        WarpEndpointCandidate(id: "162-193-1-1701", host: "162.159.193.1", port: 1701, label: "162.159.193.1:1701"),
-        WarpEndpointCandidate(id: "162-193-1-4500", host: "162.159.193.1", port: 4500, label: "162.159.193.1:4500"),
+        // 8.6.112.0/24 + non-standard UDP ports (most reliable on Iranian ISPs)
+        WarpEndpointCandidate(id: "8-6-224-5279", host: "8.6.112.224", port: 5279, label: "8.6.112.224:5279 (Recommended · Iran)"),
+        WarpEndpointCandidate(id: "8-6-46-903", host: "8.6.112.46", port: 903, label: "8.6.112.46:903 (Iran)"),
+        WarpEndpointCandidate(id: "8-6-206-3854", host: "8.6.112.206", port: 3854, label: "8.6.112.206:3854 (Iran)"),
+        WarpEndpointCandidate(id: "8-6-31-859", host: "8.6.112.31", port: 859, label: "8.6.112.31:859 (Iran)"),
+        WarpEndpointCandidate(id: "8-6-113-864", host: "8.6.112.113", port: 864, label: "8.6.112.113:864 (Iran)"),
+        WarpEndpointCandidate(id: "8-6-121-500", host: "8.6.112.121", port: 500, label: "8.6.112.121:500 (Iran)"),
+        WarpEndpointCandidate(id: "8-6-208-2408", host: "8.6.112.208", port: 2408, label: "8.6.112.208:2408 (Iran)"),
+        WarpEndpointCandidate(id: "8-6-10-1701", host: "8.6.112.10", port: 1701, label: "8.6.112.10:1701 (Iran)"),
+        WarpEndpointCandidate(id: "8-6-132-8854", host: "8.6.112.132", port: 8854, label: "8.6.112.132:8854 (Iran)"),
+        WarpEndpointCandidate(id: "8-6-146-942", host: "8.6.112.146", port: 942, label: "8.6.112.146:942 (Iran)"),
+        // 188.114.96-99.0/24 fallbacks
         WarpEndpointCandidate(id: "188-96-1-2408", host: "188.114.96.1", port: 2408, label: "188.114.96.1:2408"),
-        WarpEndpointCandidate(id: "188-96-5-2408", host: "188.114.96.5", port: 2408, label: "188.114.96.5:2408"),
         WarpEndpointCandidate(id: "188-97-1-2408", host: "188.114.97.1", port: 2408, label: "188.114.97.1:2408"),
         WarpEndpointCandidate(id: "188-98-1-2408", host: "188.114.98.1", port: 2408, label: "188.114.98.1:2408"),
         WarpEndpointCandidate(id: "188-99-1-2408", host: "188.114.99.1", port: 2408, label: "188.114.99.1:2408"),
         WarpEndpointCandidate(id: "188-96-1-500", host: "188.114.96.1", port: 500, label: "188.114.96.1:500"),
-        WarpEndpointCandidate(id: "188-96-1-4500", host: "188.114.96.1", port: 4500, label: "188.114.96.1:4500")
+        WarpEndpointCandidate(id: "188-96-1-4500", host: "188.114.96.1", port: 4500, label: "188.114.96.1:4500"),
+        // Main Cloudflare fallback
+        WarpEndpointCandidate(id: "engage-2408", host: "engage.cloudflareclient.com", port: 2408, label: "engage.cloudflareclient.com:2408 (Global)")
     ]
 }
 

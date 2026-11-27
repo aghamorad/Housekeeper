@@ -295,7 +295,7 @@ struct CloudflareVPNView: View {
                                 .font(.system(.caption, design: .monospaced))
                                 .frame(maxWidth: 320)
                         }
-                        Toggle("Include Amnezia 3.0 / 3.1 lines (S3, S4)", isOn: $engine.warpUse3x)
+                        Toggle("Include Amnezia 3.0 / 3.1 anti-DPI timing & RandomTrailers", isOn: $engine.warpUse3x)
                             .toggleStyle(.checkbox)
                         Toggle("Register key with Cloudflare WARP online (required once)", isOn: $engine.warpRegisterOnline)
                             .toggleStyle(.checkbox)
