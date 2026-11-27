@@ -15,6 +15,9 @@ struct ContentView: View {
     @State private var showQuickJump: Bool = false
     @State private var quickJumpQuery: String = ""
     @State private var showLegacyHelperAlert = false
+    @State private var showUpdateAvailableAlert = false
+    @State private var updateAvailableMessage = ""
+    @State private var promptedUpdateCommit: String? = nil
 
 
     /// The view a sheet shows, one screen per case. Each is given the
@@ -141,6 +144,24 @@ struct ContentView: View {
                 }
             } message: {
                 Text("The previous version installed a background helper inside the app folder, which your own account can modify. This version moves it to a system folder that only the system can write to, and checks that the program calling it is Housekeeper's signed app. One administrator password is needed, once.")
+            }
+            .onChange(of: appState.selfUpdateState) { state in
+                if case .available(let report) = state, promptedUpdateCommit != report.remoteCommit {
+                    promptedUpdateCommit = report.remoteCommit
+                    updateAvailableMessage = SelfUpdateView.behindSentence(report)
+                    showUpdateAvailableAlert = true
+                }
+            }
+            .alert("Update Available", isPresented: $showUpdateAvailableAlert) {
+                Button("View & Update…") {
+                    showUpdateAvailableAlert = false
+                    appState.showSelfUpdate = true
+                }
+                Button("Later", role: .cancel) {
+                    showUpdateAvailableAlert = false
+                }
+            } message: {
+                Text("\(updateAvailableMessage) Open the updater to see what changed and install it.")
             }
             .onReceive(NotificationCenter.default.publisher(for: .housekeepingOpenQuickJump)) { _ in
                 quickJumpQuery = ""
