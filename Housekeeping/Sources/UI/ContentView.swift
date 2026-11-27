@@ -78,7 +78,10 @@ struct ContentView: View {
                 ScreenChrome(title: workspaceTitle(workspace), subtitle: workspaceSubtitle(workspace)) {
                     sheetBody(workspace)
                         .id(workspace.rawValue)
-                        .transition(.opacity.combined(with: .offset(y: 5)))
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.992)).combined(with: .offset(y: 4)),
+                            removal: .opacity
+                        ))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
@@ -87,7 +90,7 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
-            .animation(.spring(response: 0.28, dampingFraction: 0.88), value: appState.workspace)
+            .animation(.spring(response: 0.26, dampingFraction: 0.88), value: appState.workspace)
             .environment(\.uiStyle, style)
             .housekeepingSurface(style)
             // Support resizing all the way into native macOS Full Screen.

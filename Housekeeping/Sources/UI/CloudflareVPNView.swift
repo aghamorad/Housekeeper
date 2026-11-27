@@ -349,7 +349,7 @@ struct CloudflareVPNView: View {
 
                     HStack(spacing: 10) {
                         ThemeButton(
-                            title: copiedKey == "warp" ? "Copied ✓" : "Copy Config",
+                            title: copiedKey == "warp" ? "Copied" : "Copy Config",
                             isPrimary: true
                         ) {
                             triggerCopy(key: "warp", text: engine.generatedWarpConfig, note: "AmneziaWG WARP config copied. Paste or import in AmneziaVPN.")
@@ -638,7 +638,7 @@ struct CloudflareVPNView: View {
                         Spacer()
                         if hasHost {
                             ThemeButton(
-                                title: copiedKey == "top5" ? "Copied Top 5 ✓" : "Copy Top 5 VLESS Links",
+                                title: copiedKey == "top5" ? "Copied Top 5" : "Copy Top 5 VLESS Links",
                                 isPrimary: true
                             ) {
                                 let top = engine.cleanIPResults.prefix(5).enumerated().map { idx, item in
@@ -665,7 +665,7 @@ struct CloudflareVPNView: View {
                         let hasHost = !engine.workerHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         ForEach(IranianCarrierPreset.all) { carrier in
                             let key = "carrier-\(carrier.id)"
-                            ThemeButton(title: copiedKey == key ? "Copied ✓" : (hasHost ? "\(carrier.name) VLESS" : carrier.hostname)) {
+                            ThemeButton(title: copiedKey == key ? "Copied" : (hasHost ? "\(carrier.name) VLESS" : carrier.hostname)) {
                                 if hasHost {
                                     let link = engine.buildVLESSLink(address: carrier.hostname, label: "HK-\(carrier.id.uppercased())")
                                     triggerCopy(key: key, text: link, note: "Copied \(carrier.name) VLESS config.")
@@ -716,19 +716,19 @@ struct CloudflareVPNView: View {
 
             Spacer()
 
-            ThemeButton(title: copiedKey == "ip-\(item.ip)" ? "Copied ✓" : "IP") {
+            ThemeButton(title: copiedKey == "ip-\(item.ip)" ? "Copied" : "IP") {
                 triggerCopy(key: "ip-\(item.ip)", text: item.ip, note: "Copied clean IP \(item.ip).")
             }
 
             if hasHost {
                 ThemeButton(
-                    title: copiedKey == "vless-\(item.ip)" ? "Copied ✓" : "VLESS",
+                    title: copiedKey == "vless-\(item.ip)" ? "Copied" : "VLESS",
                     isPrimary: true
                 ) {
                     let link = engine.buildVLESSLink(address: item.ip, label: "HK-\(item.ip)-\(item.latencyMs)ms")
                     triggerCopy(key: "vless-\(item.ip)", text: link, note: "Copied VLESS link for \(item.ip).")
                 }
-                ThemeButton(title: copiedKey == "frag-\(item.ip)" ? "Copied ✓" : "Fragment JSON") {
+                ThemeButton(title: copiedKey == "frag-\(item.ip)" ? "Copied" : "Fragment JSON") {
                     let json = engine.buildFragmentXrayJSON(address: item.ip)
                     triggerCopy(key: "frag-\(item.ip)", text: json, note: "Copied TLS-Fragment Xray JSON for \(item.ip).")
                 }
@@ -804,7 +804,7 @@ struct CloudflareVPNView: View {
                 .foregroundStyle(.secondary)
             HStack(spacing: 10) {
                 if let payload = engine.qrPayload {
-                    ThemeButton(title: copiedKey == "qr" ? "Copied ✓" : "Copy Text") {
+                    ThemeButton(title: copiedKey == "qr" ? "Copied" : "Copy Text") {
                         triggerCopy(key: "qr", text: payload, note: "Copied config text.")
                     }
                 }

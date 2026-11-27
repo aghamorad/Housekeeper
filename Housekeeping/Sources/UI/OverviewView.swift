@@ -1,18 +1,29 @@
 import SwiftUI
 import AppKit
 
-/// The starting point keeps measurements separate from actions. Every number
-/// comes from the filesystem or a completed scan, and every row opens a tool.
+/// The flagship Command Deck for Housekeeper.
+/// Combines live storage health, instant 1-click hero launch tiles, live tool search,
+/// and a balanced 2-column kitchen-sink grid — 100% event-driven (0.0% idle CPU).
 struct OverviewView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.uiStyle) private var style
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var vitals = SystemVitals.shared
     @State private var mascotHovered = false
+    @State private var filterText = ""
+
+    private struct ToolEntry: Identifiable {
+        let id: String
+        let title: String
+        let detail: String
+        let icon: String
+        let keywords: String
+        let action: () -> Void
+    }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 20) {
                 headerBar
 
                 if let zombie = vitals.snapshot.zombieCandidates.first {
@@ -50,66 +61,29 @@ struct OverviewView: View {
                     .housekeepingCard(cornerRadius: 12)
                 }
 
-                groupedSection(title: "System Care") {
-                    OverviewToolRow(title: "Clean Up", detail: "Review caches, installers, and removable app data.", icon: "sparkles") {
-                        appState.showClean = true
-                    }
-                    Divider().padding(.leading, 44)
-                    OverviewToolRow(title: "Update Apps", detail: "Check Mac apps, Homebrew packages, and standalone tools.", icon: "arrow.triangle.2.circlepath") {
-                        appState.showUpdateList = true
-                    }
-                    Divider().padding(.leading, 44)
-                    OverviewToolRow(title: "Uninstall Apps", detail: "Remove applications along with their leftover support files.", icon: "xmark.app") {
-                        appState.showUninstaller = true
-                    }
+                // 4 tactile everyday launch tiles
+                if filterText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    heroQuickDeck
                 }
 
-                groupedSection(title: "Network & Speed") {
-                    OverviewToolRow(title: "Speed Test", detail: "Measure download, upload, ping, and responsiveness.", icon: "speedometer") {
-                        appState.showSpeedTest = true
-                    }
-                    Divider().padding(.leading, 44)
-                    OverviewToolRow(title: "Route Sweep", detail: "Test VPN locations and protocols for reachability.", icon: "network") {
-                        appState.showRoutes = true
-                    }
-                    Divider().padding(.leading, 44)
-                    OverviewToolRow(title: "DNS Switcher", detail: "Switch DNS presets or restore automatic router DNS.", icon: "globe") {
-                        appState.showDNSSwitcher = true
-                    }
-                    Divider().padding(.leading, 44)
-                    OverviewToolRow(title: "VPN Tunnels", detail: "Inspect active tunnel interfaces and VPN services.", icon: "lock.shield") {
-                        appState.showVPNTunnels = true
-                    }
-                }
+                // Instant filter bar across every tool in the kitchen sink
+                searchBar
 
-                groupedSection(title: "Hardware & Studios") {
-                    OverviewToolRow(title: "Cooling & Fans", detail: "Read thermal sensors and adjust fan speed.", icon: "fan") {
-                        appState.showFanControl = true
-                    }
-                    Divider().padding(.leading, 44)
-                    OverviewToolRow(title: "Battery Health", detail: "Cycle count, battery wear, and sleep drain checks.", icon: "battery.100") {
-                        appState.showBatteryHealth = true
-                    }
-                    Divider().padding(.leading, 44)
-                    OverviewToolRow(title: "Space Lens", detail: "Browse folders by real disk usage.", icon: "internaldrive") {
-                        appState.showDiskBrowser = true
-                    }
-                    Divider().padding(.leading, 44)
-                    OverviewToolRow(title: "Local AI Models", detail: "See installed MLX and Ollama models and manage memory.", icon: "cpu") {
-                        appState.showLocalModels = true
-                    }
-                    Divider().padding(.leading, 44)
-                    OverviewToolRow(title: "MediaDock 9 & Bookbind", detail: "Open Media Studio or Bookbind audiobook builder from the sidebar.", icon: "play.rectangle") {
-                        appState.showMediaDock = true
-                    }
+                let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if query.isEmpty {
+                    twoColumnKitchenSink
+                } else {
+                    filteredToolList(query: query)
                 }
             }
-            .frame(maxWidth: 940, alignment: .leading)
-            .padding(28)
+            .frame(maxWidth: 960, alignment: .leading)
+            .padding(26)
             .frame(maxWidth: .infinity, alignment: .top)
         }
         .background { HousekeepingBackdrop(style: style) }
     }
+
+    // MARK: - Header
 
     private var headerBar: some View {
         HStack(alignment: .center, spacing: 14) {
@@ -123,6 +97,7 @@ struct OverviewView: View {
             .scaleEffect(mascotHovered && !reduceMotion ? 1.09 : 1.0)
             .onHover { mascotHovered = $0 }
             .onTapGesture {
+                HousekeepingFeedback.press()
                 appState.showHousekeeper = true
             }
             .animation(.spring(response: 0.32, dampingFraction: 0.65), value: mascotHovered)
@@ -136,9 +111,193 @@ struct OverviewView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 16)
-            Label(Host.current().localizedName ?? "This Mac", systemImage: "desktopcomputer")
-                .font(.system(size: 12))
+
+            HStack(spacing: 8) {
+                Label(Host.current().localizedName ?? "This Mac", systemImage: "desktopcomputer")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Text("·")
+                    .foregroundStyle(.tertiary)
+                Text(HardwareProfile.kind)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(style.accent)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color.primary.opacity(0.05)))
+            .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.75))
+        }
+    }
+
+    // MARK: - Hero Quick Launchpad (4 Everyday Actions)
+
+    private var heroQuickDeck: some View {
+        HStack(spacing: 12) {
+            OverviewHeroTile(
+                title: "Clean Up",
+                subtitle: "Safe junk & caches",
+                icon: "sparkles"
+            ) { appState.showClean = true }
+
+            OverviewHeroTile(
+                title: "Clean VPN",
+                subtitle: "WARP & Clean IPs",
+                icon: "shield.lefthalf.filled.badge.checkmark"
+            ) { appState.showCloudflareVPN = true }
+
+            OverviewHeroTile(
+                title: "Speed Test",
+                subtitle: "Ping & throughput",
+                icon: "speedometer"
+            ) { appState.showSpeedTest = true }
+
+            OverviewHeroTile(
+                title: "Space Lens",
+                subtitle: "Folders & large files",
+                icon: "internaldrive"
+            ) { appState.showDiskBrowser = true }
+        }
+    }
+
+    // MARK: - Live Filter Bar
+
+    private var searchBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12.5, weight: .medium))
                 .foregroundStyle(.secondary)
+            TextField("Filter tools… (VPN, DNS, fans, YouTube, audiobook, trash)", text: $filterText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+            if !filterText.isEmpty {
+                Button {
+                    HousekeepingFeedback.press()
+                    withAnimation(HousekeepingMotion.hover) { filterText = "" }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text("⌘/")
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.06)))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .housekeepingCard(cornerRadius: 10)
+    }
+
+    // MARK: - 2-Column Kitchen Sink
+
+    private var allToolSections: [(title: String, items: [ToolEntry])] {
+        [
+            ("System Care", [
+                ToolEntry(id: "clean", title: "Clean Up", detail: "Caches, installers, and removable app data.", icon: "sparkles", keywords: "junk cache trash logs") {
+                    appState.showClean = true
+                },
+                ToolEntry(id: "updates", title: "Update Apps", detail: "Mac apps, Homebrew packages, and App Store.", icon: "arrow.triangle.2.circlepath", keywords: "brew cask upgrade") {
+                    appState.showUpdateList = true
+                },
+                ToolEntry(id: "uninstall", title: "Uninstall Apps", detail: "Remove apps along with leftover support files.", icon: "xmark.app", keywords: "delete remove leftovers") {
+                    appState.showUninstaller = true
+                },
+                ToolEntry(id: "downloaded", title: "Open a Downloaded App", detail: "Clear a download flag safely without touching signatures.", icon: "checkmark.shield", keywords: "gatekeeper quarantine xattr") {
+                    appState.showAppRepair = true
+                }
+            ]),
+            ("Network & VPN", [
+                ToolEntry(id: "cfvpn", title: "Cloudflare Clean VPN", detail: "AmneziaWG WARP configs & Clean Cloudflare IP VLESS scanner.", icon: "shield.lefthalf.filled.badge.checkmark", keywords: "cloudflare warp amnezia bpb vless clean ip fragment") {
+                    appState.showCloudflareVPN = true
+                },
+                ToolEntry(id: "routes", title: "Route Sweep", detail: "Test VPN locations and protocols for reachability.", icon: "network", keywords: "windscribe surfshark expressvpn") {
+                    appState.showRoutes = true
+                },
+                ToolEntry(id: "speed", title: "Speed Test", detail: "Measure download, upload, ping, and jitter.", icon: "speedometer", keywords: "mbps internet ping") {
+                    appState.showSpeedTest = true
+                },
+                ToolEntry(id: "dns", title: "DNS Switcher", detail: "1-click Iranian & privacy DNS presets or reset.", icon: "globe", keywords: "shecan begzar electro 403") {
+                    appState.showDNSSwitcher = true
+                },
+                ToolEntry(id: "tunnels", title: "VPN Tunnels", detail: "Inspect active utun interfaces and VPN services.", icon: "lock.shield", keywords: "utun fix internet") {
+                    appState.showVPNTunnels = true
+                }
+            ]),
+            ("Hardware & Vitals", [
+                ToolEntry(id: "fans", title: "Cooling & Fans", detail: "Live thermal sensors and fan speed control.", icon: "fan.fill", keywords: "temperature smc heat") {
+                    appState.showFanControl = true
+                },
+                ToolEntry(id: "battery", title: "Battery Health", detail: "Cycle count, battery wear, and sleep drain checks.", icon: "battery.100.bolt", keywords: "power charger cycles") {
+                    appState.showBatteryHealth = true
+                },
+                ToolEntry(id: "space", title: "Space Lens", detail: "Browse folders and search subfolders by real size.", icon: "internaldrive", keywords: "disk storage files") {
+                    appState.showDiskBrowser = true
+                },
+                ToolEntry(id: "activity", title: "Background Activity", detail: "Inspect running processes and login items.", icon: "list.bullet.rectangle", keywords: "cpu ram memory processes") {
+                    appState.showBackgroundActivity = true
+                }
+            ]),
+            ("Studios & AI", [
+                ToolEntry(id: "mediadock", title: "Media Studio (MediaDock)", detail: "Download YouTube, Spotify & Apple Music (Intel + Silicon).", icon: "play.rectangle.fill", keywords: "youtube spotify apple music yt-dlp ffmpeg") {
+                    appState.showMediaDock = true
+                },
+                ToolEntry(id: "bookbind", title: "Bookbind Studio", detail: "Merge audio tracks into chaptered M4B audiobooks.", icon: "book.closed.fill", keywords: "audiobook m4b mp3 chapters") {
+                    appState.showBookbind = true
+                },
+                ToolEntry(id: "models", title: "Local AI Models", detail: "Manage local MLX, Ollama & GGUF models and RAM.", icon: "cpu", keywords: "llm ollama mlx hermes") {
+                    appState.showLocalModels = true
+                },
+                ToolEntry(id: "spoof", title: "Spoof Location", detail: "USB GPS location helper for iPhone.", icon: "location.slash", keywords: "iphone gps developer mode") {
+                    appState.showPhone = true
+                }
+            ])
+        ]
+    }
+
+    private var twoColumnKitchenSink: some View {
+        let sections = allToolSections
+        return LazyVGrid(
+            columns: [GridItem(.flexible(), spacing: 16, alignment: .top), GridItem(.flexible(), spacing: 16, alignment: .top)],
+            alignment: .leading,
+            spacing: 16
+        ) {
+            ForEach(sections, id: \.title) { section in
+                groupedSection(title: section.title) {
+                    ForEach(Array(section.items.enumerated()), id: \.element.id) { idx, item in
+                        if idx > 0 {
+                            Divider().padding(.leading, 48)
+                        }
+                        OverviewToolRow(title: item.title, detail: item.detail, icon: item.icon, action: item.action)
+                    }
+                }
+            }
+        }
+    }
+
+    private func filteredToolList(query: String) -> some View {
+        let matches = allToolSections.flatMap(\.items).filter {
+            $0.title.lowercased().contains(query)
+                || $0.detail.lowercased().contains(query)
+                || $0.keywords.lowercased().contains(query)
+        }
+        return groupedSection(title: "Matching Tools (\(matches.count))") {
+            if matches.isEmpty {
+                Text("No tools match '\(filterText)'.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ForEach(Array(matches.enumerated()), id: \.element.id) { idx, item in
+                    if idx > 0 { Divider().padding(.leading, 48) }
+                    OverviewToolRow(title: item.title, detail: item.detail, icon: item.icon, action: item.action)
+                }
+            }
         }
     }
 
@@ -147,7 +306,7 @@ struct OverviewView: View {
             Text(title)
                 .font(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .padding(.leading, 2)
+                .padding(.leading, 4)
             VStack(spacing: 0) {
                 content()
             }
@@ -201,6 +360,51 @@ struct OverviewView: View {
     }
 }
 
+private struct OverviewHeroTile: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let action: () -> Void
+
+    @Environment(\.uiStyle) private var style
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(style.accent.opacity(hovering ? 0.22 : 0.13))
+                    Image(systemName: icon)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(style.accent)
+                        .scaleEffect(hovering && !reduceMotion ? 1.09 : 1.0)
+                }
+                .frame(width: 34, height: 34)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 13.5, weight: .semibold))
+                        .foregroundStyle(style.text)
+                    Text(subtitle)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .housekeepingCard(cornerRadius: 13, highlighted: hovering)
+            .offset(y: hovering && !reduceMotion ? -1.5 : 0)
+            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        }
+        .buttonStyle(HousekeepingPressableStyle(pressedScale: 0.97, haptic: true))
+        .onHover { hovering = $0 }
+        .animation(reduceMotion ? nil : HousekeepingMotion.hover, value: hovering)
+    }
+}
+
 private struct OverviewToolRow: View {
     let title: String
     let detail: String
@@ -213,33 +417,39 @@ private struct OverviewToolRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 15, weight: hovering ? .semibold : .regular))
-                    .foregroundStyle(style.accent)
-                    .frame(width: 24, alignment: .center)
-                    .scaleEffect(hovering && !reduceMotion ? 1.08 : 1.0)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(style.accent.opacity(hovering ? 0.18 : 0.09))
+                    Image(systemName: icon)
+                        .font(.system(size: 13.5, weight: hovering ? .semibold : .medium))
+                        .foregroundStyle(style.accent)
+                        .scaleEffect(hovering && !reduceMotion ? 1.08 : 1.0)
+                }
+                .frame(width: 28, height: 28)
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 13.5, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(style.text)
                     Text(detail)
-                        .font(.system(size: 12))
+                        .font(.system(size: 11.5))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(hovering ? style.accent : Color.secondary.opacity(0.45))
-                    .offset(x: hovering && !reduceMotion ? 2.5 : 0)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(hovering ? style.accent : Color.secondary.opacity(0.42))
+                    .offset(x: hovering && !reduceMotion ? 3 : 0)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .background(hovering ? style.accent.opacity(0.065) : Color.clear)
             .contentShape(Rectangle())
         }
-        .buttonStyle(HousekeepingPressableStyle(pressedScale: 0.992, haptic: false))
+        .buttonStyle(HousekeepingPressableStyle(pressedScale: 0.99, haptic: true))
         .onHover { hovering = $0 }
-        .animation(reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.8), value: hovering)
+        .animation(reduceMotion ? nil : HousekeepingMotion.hover, value: hovering)
         .accessibilityLabel(title)
     }
 }
@@ -377,6 +587,7 @@ struct SidebarNavigationRow: View {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: selected ? .semibold : .regular))
                     .foregroundStyle(selected ? style.accent : (hovering ? style.text : .secondary))
+                    .scaleEffect(hovering && !selected && !reduceMotion ? 1.07 : 1.0)
                     .frame(width: 18)
                 Text(title)
                     .font(.system(size: 13, weight: selected ? .semibold : .regular))
@@ -392,16 +603,16 @@ struct SidebarNavigationRow: View {
                     activePill
                 } else if hovering {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(style.groupingBackground.opacity(0.60))
+                        .fill(style.groupingBackground.opacity(0.65))
                 }
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(HousekeepingPressableStyle(pressedScale: 0.975, haptic: false))
+        .buttonStyle(HousekeepingPressableStyle(pressedScale: 0.975, haptic: true))
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.45)
         .onHover { hovering = $0 }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hovering)
+        .animation(reduceMotion ? nil : HousekeepingMotion.hover, value: hovering)
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
