@@ -902,7 +902,7 @@ struct CleanerView: View {
                     }
 
                     if action == .emptyTrash {
-                        Text("This is the one action in Housekeeping that cannot be undone. There is no Quarantine copy of what is in the Trash.")
+                        Text("This is the one action in Housekeeper that cannot be undone. There is no Quarantine copy of what is in the Trash.")
                             .font(style.smallFont)
                             .foregroundColor(style.caution)
                     }
@@ -925,9 +925,6 @@ struct CleanerView: View {
                                 ? "Removes what is in the Trash for good."
                                 : "Moves everything listed into Quarantine, where it can be put back."
                         ) {
-                            if action == .clean {
-                                model.confirmationText = "ok"
-                            }
                             model.confirmPending()
                         }
                     }
@@ -936,11 +933,6 @@ struct CleanerView: View {
             }
             .frame(maxWidth: 520)
         }
-    }
-
-    private func matches(_ action: CleanerModel.PendingAction) -> Bool {
-        let typed = model.confirmationText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return typed == "ok" || typed == action.word
     }
 
     // MARK: - Housekeeper

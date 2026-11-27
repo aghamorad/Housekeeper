@@ -428,7 +428,7 @@ final class CleanerModel: ObservableObject {
         guard !trash.isEmpty else { return }
         pendingAction = .emptyTrash
         pendingTitle = "Permanently delete everything in the Trash?"
-        pendingDetail = "\(trash.count) item\(trash.count == 1 ? "" : "s"), \(trash.size.sizeDescription). This is the one action in Housekeeping that cannot be undone — there is no Quarantine copy afterwards."
+        pendingDetail = "\(trash.count) item\(trash.count == 1 ? "" : "s"), \(trash.size.sizeDescription) currently in your Trash."
         pendingPaths = []
         pendingSize = trash.size
         pendingAppName = nil
@@ -446,11 +446,6 @@ final class CleanerModel: ObservableObject {
 
     func confirmPending() {
         guard let action = pendingAction else { return }
-        let typed = confirmationText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard typed == "ok" || typed == action.word else {
-            confirmationHint = "Type “ok” to continue."
-            return
-        }
         pendingAction = nil
         confirmationText = ""
         confirmationHint = nil
