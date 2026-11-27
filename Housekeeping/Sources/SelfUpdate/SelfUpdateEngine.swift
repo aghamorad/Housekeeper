@@ -210,7 +210,14 @@ final class SelfUpdateEngine {
         )).map { $0.stdout.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
         progress(.pull, .done(shortHead))
 
-        // 4. Build.
+        // 4. Preserve macOS permissions (TCC) by keeping a stable local signing
+        //    identity across updates. If the local signing keychain does not exist
+        //    yet on this Mac (e.g. first self-update on an Intel Mac), set it up
+        //    automatically before building so macOS never revokes Full Disk Access
+        //    or Accessibility on future updates.
+        let previousAuthority = await signingAuthority(of: plan.source.destination)
+        await ensureStableSigningIdentityIfAvailable(in: tree)
+
         let staging = try makeStagingDirectory()
         progress(.build, .running)
         let built = try await runner.run(
@@ -243,7 +250,16 @@ final class SelfUpdateEngine {
         guard verified.succeeded else {
             throw SelfUpdateFailure.commandFailed(step: .verify, message: message(from: verified))
         }
-        progress(.verify, .done("signed"))
+        let newAuthority = await signingAuthority(of: newBundle)
+        let verifyLabel: String
+        if let previousAuthority, !previousAuthority.isEmpty, previousAuthority == newAuthority {
+            verifyLabel = "signed (permissions preserved)"
+        } else if let newAuthority, !newAuthority.isEmpty {
+            verifyLabel = "signed (\(newAuthority))"
+        } else {
+            verifyLabel = "signed"
+        }
+        progress(.verify, .done(verifyLabel))
 
         // 6. Hand off the swap.
         let destination = plan.source.destination
@@ -264,6 +280,43 @@ final class SelfUpdateEngine {
     }
 
     // MARK: - Pieces
+
+    /// Reads the `Authority=` line from `codesign -dvv` so updates can verify
+    /// that the signing identity matches (which keeps macOS TCC permissions
+    /// such as Full Disk Access and Accessibility intact across updates).
+    private func signingAuthority(of bundleURL: URL) async -> String? {
+        guard let result = try? await runner.run(
+            executable: "/usr/bin/codesign",
+            arguments: ["-dvv", bundleURL.path],
+            timeout: 30
+        ) else { return nil }
+        let combined = result.stderr + "\n" + result.stdout
+        for line in combined.split(separator: "\n") {
+            if line.hasPrefix("Authority=") {
+                let value = line.dropFirst("Authority=".count).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !value.isEmpty { return value }
+            }
+        }
+        return nil
+    }
+
+    /// Creates the unattended local signing keychain once if it does not exist
+    /// yet on this Mac, so future updates keep a stable code signature and
+    /// macOS never asks to re-grant Full Disk Access or Accessibility.
+    private func ensureStableSigningIdentityIfAvailable(in tree: URL) async {
+        let keychain = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Keychains/housekeeper-signing.keychain-db")
+        guard !FileManager.default.fileExists(atPath: keychain.path) else { return }
+        let setupScript = tree.appendingPathComponent("script/setup_signing_identity.sh")
+        guard FileManager.default.fileExists(atPath: setupScript.path) else { return }
+        _ = try? await runner.run(
+            executable: "/bin/bash",
+            arguments: [setupScript.path],
+            environment: buildEnvironment(),
+            currentDirectory: tree,
+            timeout: 60
+        )
+    }
 
     private func message(from result: ProcessRunner.Result) -> String {
         if result.timedOut {
@@ -337,7 +390,7 @@ final class SelfUpdateEngine {
             /bin/mv "$DEST" "$KEEP" || exit 1
         fi
 
-        if /bin/cp -R "$NEW" "$DEST"; then
+        if /bin/mv "$NEW" "$DEST" 2>/dev/null || /usr/bin/ditto "$NEW" "$DEST"; then
             /usr/bin/xattr -dr com.apple.quarantine "$DEST" 2>/dev/null
             /usr/bin/open "$DEST"
             /bin/rm -rf "$STAGE"

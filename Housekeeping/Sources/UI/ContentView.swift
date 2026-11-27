@@ -254,7 +254,7 @@ struct ContentView: View {
             QuickJumpDestination(id: "speed", title: "Speed Test", subtitle: "Measure download, upload & ping", icon: "speedometer", keywords: "internet speed mbps ping") {
                 appState.showSpeedTest = true
             },
-            QuickJumpDestination(id: "cloudflare-vpn", title: "Cloudflare Clean VPN", subtitle: "AmneziaWG WARP & Clean IP VLESS configs", icon: "shield.lefthalf.filled.badge.checkmark", keywords: "cloudflare warp amnezia bpb vless clean ip vpn fragment") {
+            QuickJumpDestination(id: "cloudflare-vpn", title: "Cloudflare Clean VPN", subtitle: "AmneziaWG WARP & Clean IP VLESS configs", icon: "checkmark.shield.fill", keywords: "cloudflare warp amnezia bpb vless clean ip vpn fragment") {
                 appState.showCloudflareVPN = true
             },
             QuickJumpDestination(id: "dns", title: "DNS Switcher", subtitle: "1-click DNS presets", icon: "globe.badge.chevron.backward", keywords: "dns 403 network") {
@@ -926,7 +926,7 @@ private struct JobBar: View {
                     // Category 4: Network & Routes
                     sidebarCategory("Network & Routes") {
                         if let job = allJobs.first(where: { $0.id == "cloudflare-vpn" }) {
-                            sidebarJob(job, customTitle: "Cloudflare Clean VPN", customIcon: "shield.lefthalf.filled.badge.checkmark")
+                            sidebarJob(job, customTitle: "Cloudflare Clean VPN", customIcon: "checkmark.shield.fill")
                         }
                         if let job = allJobs.first(where: { $0.id == "speed-test" }) {
                             sidebarJob(job, customTitle: "Speed Test", customIcon: "speedometer")
@@ -1181,7 +1181,7 @@ private struct JobBar: View {
             Job(
                 id: "cloudflare-vpn",
                 title: "Cloudflare Clean VPN",
-                systemImage: "shield.lefthalf.filled.badge.checkmark",
+                systemImage: "checkmark.shield.fill",
                 zone: .route,
                 help: "Generate fresh AmneziaWG WARP configs or connect your Cloudflare token to scan clean Cloudflare IPv4 addresses and build VLESS + Fragment VPN configs.",
                 action: { appState.showCloudflareVPN = true }

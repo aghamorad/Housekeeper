@@ -7,6 +7,29 @@ struct DownloadView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
+                if let missingSummary = missingToolsSummary {
+                    RetroPanel(title: "Auto-Configure Media Studio · \(HardwareProfile.displayLabel)") {
+                        HStack(alignment: .center, spacing: 10) {
+                            StatusLight(color: skin.amber)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Missing \(missingSummary) for this \(HardwareProfile.kind) Mac.")
+                                    .font(skin.font(11, weight: .bold))
+                                Text("FFmpeg is already bundled inside Housekeeper. Click Auto-Setup to install the right native downloaders into \(HardwareProfile.preferredHomebrewPrefix)/bin automatically.")
+                                    .font(skin.font(10))
+                                    .foregroundStyle(skin.ink.opacity(0.72))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 8)
+                            Button("Auto-Setup in Terminal") {
+                                model.openCommandInTerminal(HardwareProfile.mediaDockQuickSetupCommand)
+                            }
+                            .buttonStyle(MediaDockButtonStyle(prominent: true))
+                            Button("Setup") { model.section = .setup }
+                                .buttonStyle(MediaDockButtonStyle())
+                        }
+                    }
+                }
+
                 RetroPanel(title: "Link & source") {
                     RetroTextField(placeholder: "Paste a YouTube, Spotify, or Apple Music URL", text: $model.urlText)
                     HStack(spacing: 10) {
@@ -196,6 +219,18 @@ struct DownloadView: View {
                 .font(skin.font(10))
                 .foregroundStyle(skin.ink.opacity(0.66))
         }
+    }
+
+    private var missingToolsSummary: String? {
+        guard !model.isScanning else { return nil }
+        let needed: [DependencyID]
+        switch model.effectiveSource {
+        case .spotify: needed = [.spotdl]
+        case .appleMusic: needed = [.gamdl]
+        case .youtube, .none: needed = [.ytDlp]
+        }
+        let missing = needed.filter { model.dependency($0)?.isInstalled != true }.map(\.title)
+        return missing.isEmpty ? nil : missing.joined(separator: ", ")
     }
 
     private var detectionColor: Color {

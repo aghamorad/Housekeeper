@@ -1476,7 +1476,7 @@ struct MenuBarPanel: View {
 
             HStack(spacing: 6) {
                 if let onCloudflareVPN {
-                    DoorButton(title: "Clean VPN", icon: "shield.lefthalf.filled.badge.checkmark", action: leaving(onCloudflareVPN))
+                    DoorButton(title: "Clean VPN", icon: "checkmark.shield.fill", action: leaving(onCloudflareVPN))
                 } else {
                     DoorButton(title: "Scan Mac", icon: "magnifyingglass", action: leaving(onScan))
                 }

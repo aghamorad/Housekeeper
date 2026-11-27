@@ -61,7 +61,7 @@ struct CloudflareVPNView: View {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .stroke(HousekeepingInk.redLifted.opacity(0.35), lineWidth: 1)
                         )
-                    Image(systemName: "shield.lefthalf.filled.badge.checkmark")
+                    Image(systemName: "checkmark.shield.fill")
                         .font(.system(size: 21, weight: .semibold))
                         .foregroundStyle(HousekeepingInk.redLifted)
                         .scaleEffect((engine.isGeneratingWarp || engine.isScanningIPs) && !reduceMotion ? 1.08 : 1.0)

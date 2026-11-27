@@ -165,7 +165,7 @@ struct OverviewView: View {
             OverviewHeroTile(
                 title: "Clean VPN",
                 subtitle: "WARP & Clean IPs",
-                icon: "shield.lefthalf.filled.badge.checkmark"
+                icon: "checkmark.shield.fill"
             ) { appState.showCloudflareVPN = true }
 
             OverviewHeroTile(
@@ -235,7 +235,7 @@ struct OverviewView: View {
                 }
             ]),
             ("Network & VPN", [
-                ToolEntry(id: "cfvpn", title: "Cloudflare Clean VPN", detail: "AmneziaWG WARP configs & Clean Cloudflare IP VLESS scanner.", icon: "shield.lefthalf.filled.badge.checkmark", keywords: "cloudflare warp amnezia bpb vless clean ip fragment") {
+                ToolEntry(id: "cfvpn", title: "Cloudflare Clean VPN", detail: "AmneziaWG WARP configs & Clean Cloudflare IP VLESS scanner.", icon: "checkmark.shield.fill", keywords: "cloudflare warp amnezia bpb vless clean ip fragment") {
                     appState.showCloudflareVPN = true
                 },
                 ToolEntry(id: "routes", title: "Route Sweep", detail: "Test VPN locations and protocols for reachability.", icon: "network", keywords: "windscribe surfshark expressvpn") {

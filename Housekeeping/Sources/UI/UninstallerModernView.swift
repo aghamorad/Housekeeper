@@ -49,6 +49,7 @@ final class UninstallerModel: ObservableObject {
     @Published private(set) var outcome: String?
     @Published private(set) var failures: [String] = []
     @Published private(set) var includedRelatedPaths: Set<String> = []
+    @Published var includeLeftoversByDefault: Bool = true
     @Published var pendingUninstallPlan: [InstalledApp]? = nil
     @Published private(set) var session: UninstallSession?
 
@@ -256,16 +257,18 @@ final class UninstallerModel: ObservableObject {
         }
     }
 
-    /// One press, one app: app plus its matched related files, straight to
-    /// Quarantine. The move is reversible, so there is nothing to confirm — and
-    /// requiring a review screen for a reversible move is the complexity that
-    /// made the uninstaller feel like paperwork.
+    /// One press, one app: moves the app (plus its matched leftovers when
+    /// `includeLeftoversByDefault` is on) straight to macOS Trash — no
+    /// Quarantine detour and no extra confirmation hoops.
     func uninstallImmediately(_ app: InstalledApp) {
         guard !isWorking, !isScanning, !app.isRunning else { return }
         selectedAppURLs = [app.url]
-        includedRelatedPaths.formUnion(
-            app.leftovers.filter { !ProtectionList().isProtected($0.url) }.map(\.id)
-        )
+        let unprotected = app.leftovers.filter { !ProtectionList().isProtected($0.url) }.map(\.id)
+        if includeLeftoversByDefault {
+            includedRelatedPaths.formUnion(unprotected)
+        } else {
+            includedRelatedPaths.subtract(unprotected)
+        }
         prepareUninstall()
         executeUninstall()
     }
@@ -280,6 +283,13 @@ final class UninstallerModel: ObservableObject {
             $0.isRunning ? "\($0.name) is open. Quit it, then try again." : "\($0.name) is on the Leave Alone list."
         }
         guard !targets.isEmpty else { return }
+        if includeLeftoversByDefault {
+            for app in targets {
+                includedRelatedPaths.formUnion(
+                    app.leftovers.filter { !ProtectionList().isProtected($0.url) }.map(\.id)
+                )
+            }
+        }
         pendingUninstallPlan = targets
     }
 
@@ -322,31 +332,70 @@ final class UninstallerModel: ObservableObject {
         isWorking = true
         MotionBudget.shared.hold("uninstaller-work")
         outcome = nil
-        session = UninstallSession(apps: targets)
         let skipped = failures
         Task { @MainActor [weak self] in
-            do {
-                let result = try await CleanupEngine().uninstall(targets) { [weak self] event in
-                    await self?.receiveProgress(event)
-                }
-                let moved = Set(result.movedPaths)
-                let count = targets.filter { moved.contains($0.id) }.count
-                let relatedCount = targets.flatMap(\.leftovers).filter { moved.contains($0.id) }.count
-                self?.outcome = "\(count) app\(count == 1 ? "" : "s") and \(relatedCount) related item\(relatedCount == 1 ? "" : "s") moved to Quarantine. You can put them back there. Space is freed when you delete them permanently."
-                self?.failures = skipped + result.moves.filter { !$0.succeeded }.map {
-                    "\($0.path) — \($0.message ?? "Could not be moved. Try again.")"
-                }
-                self?.selectedAppURLs.subtract(targets.filter { moved.contains($0.id) }.map(\.url))
-                self?.apps.removeAll { moved.contains($0.id) }
-                self?.session?.finish(result: result)
-            } catch {
-                self?.failures = skipped + [error.localizedDescription]
-                self?.session?.finish(error: error.localizedDescription)
+            let outcomeResult = await Task.detached(priority: .userInitiated) {
+                Self.moveAppsDirectlyToTrash(targets)
+            }.value
+
+            guard let self else { return }
+            let movedIDs = outcomeResult.movedIDs
+            let appCount = targets.filter { movedIDs.contains($0.id) }.count
+            let relatedCount = targets.flatMap(\.leftovers).filter { movedIDs.contains($0.id) }.count
+            if appCount > 0 {
+                let leftoverNote = relatedCount > 0
+                    ? " and \(relatedCount) leftover item\(relatedCount == 1 ? "" : "s")"
+                    : ""
+                self.outcome = "Uninstalled \(appCount) app\(appCount == 1 ? "" : "s")\(leftoverNote) straight to macOS Trash."
             }
-            self?.isWorking = false
+            self.failures = skipped + outcomeResult.errors
+            self.selectedAppURLs.subtract(targets.filter { movedIDs.contains($0.id) }.map(\.url))
+            self.apps.removeAll { movedIDs.contains($0.id) }
+            self.isWorking = false
             MotionBudget.shared.release("uninstaller-work")
-            self?.startScan()
+            self.startScan()
         }
+    }
+
+    private nonisolated static func moveAppsDirectlyToTrash(_ targets: [InstalledApp]) -> (movedIDs: Set<String>, errors: [String]) {
+        var moved = Set<String>()
+        var errors: [String] = []
+        let fm = FileManager.default
+
+        func trashOne(_ url: URL, id: String) {
+            guard fm.fileExists(atPath: url.path) else { return }
+            do {
+                try fm.trashItem(at: url, resultingItemURL: nil)
+                moved.insert(id)
+                return
+            } catch {
+                // Fallback to Finder AppleScript (prompts macOS admin password cleanly for /Applications owned by root).
+                let escaped = url.path
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "\"", with: "\\\"")
+                let script = "tell application \"Finder\" to delete (POSIX file \"\(escaped)\" as alias)"
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+                proc.arguments = ["-e", script]
+                try? proc.run()
+                proc.waitUntilExit()
+                if !fm.fileExists(atPath: url.path) {
+                    moved.insert(id)
+                } else {
+                    errors.append("\(url.lastPathComponent) — \(error.localizedDescription)")
+                }
+            }
+        }
+
+        for app in targets {
+            trashOne(app.url, id: app.id)
+            if moved.contains(app.id) {
+                for leftover in app.leftovers {
+                    trashOne(leftover.url, id: leftover.id)
+                }
+            }
+        }
+        return (moved, errors)
     }
 
     private func receiveProgress(_ event: UninstallProgress) {
@@ -418,9 +467,9 @@ struct UninstallerModernView: View {
                             ForEach(model.failures, id: \.self) { failure in
                                 Text(failure).font(style.smallFont).foregroundColor(style.negative).textSelection(.enabled)
                             }
-                            ThemeButton(title: "Review Quarantine", systemImage: "archivebox") {
-                                appState.refreshQuarantineAvailability()
-                                appState.showQuarantineManagement = true
+                            ThemeButton(title: "Open Trash in Finder", systemImage: "trash") {
+                                let trashURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
+                                NSWorkspace.shared.open(trashURL)
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -521,6 +570,11 @@ struct UninstallerModernView: View {
                 .menuStyle(.borderlessButton)
 
                 Spacer()
+
+                Toggle("Include leftovers", isOn: $model.includeLeftoversByDefault)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12, weight: .medium))
+                    .help("When checked, clicking Uninstall removes the app and its matched ~/Library leftovers straight to macOS Trash — no Quarantine hoops.")
 
                 if !model.selectedAppURLs.isEmpty {
                     Text("\(model.selectedAppURLs.count) selected (\(ByteCountFormatter.string(fromByteCount: model.selectedTotalSize, countStyle: .file)))")
@@ -1092,9 +1146,9 @@ struct UninstallerModernView: View {
                     .font(.system(size: 26))
                     .foregroundStyle(style.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Review App Removal")
+                    Text("Move Apps to macOS Trash")
                         .font(.system(size: 18, weight: .bold))
-                    Text("The selected apps will move to Quarantine. Related data starts excluded because it may hold settings, documents or saved games; tick an exact file only if you want to move it too. macOS may ask for an administrator password.")
+                    Text("The selected apps and ticked leftovers will be moved straight to macOS Trash (no Quarantine detour). You can untick any leftover you want to keep. macOS may ask for your password for apps in /Applications.")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                 }

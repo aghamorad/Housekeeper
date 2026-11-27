@@ -122,6 +122,51 @@ enum HardwareProfile {
             "MLX is Apple-silicon only. It cannot load on this Intel Mac. Housekeeper's own model (the Qwen/Gemma GGUF choices in Settings) does run here, on the processor."
     }
 
+    /// Total installed RAM in gigabytes (rounded to nearest GB).
+    static var physicalMemoryGB: Int {
+        max(1, Int((Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824.0).rounded()))
+    }
+
+    /// Best starter local AI model tag sized to this Mac's chip and RAM.
+    static var recommendedLocalModelTag: String {
+        let gb = physicalMemoryGB
+        if isIntel {
+            // Intel Macs run GGUF on CPU, so keep the starter fast and responsive.
+            if gb >= 32 { return "qwen2.5:7b" }
+            if gb >= 16 { return "qwen2.5:3b" }
+            return "qwen2.5:1.5b"
+        } else {
+            if gb >= 32 { return "qwen2.5:14b" }
+            if gb >= 16 { return "qwen2.5:7b" }
+            return "qwen2.5:3b"
+        }
+    }
+
+    /// Plain-language runtime recommendation for this Mac.
+    static var recommendedLocalRuntimeLabel: String {
+        isAppleSilicon ? "MLX, Ollama, or LM Studio" : "Ollama or LM Studio (GGUF — CPU mode)"
+    }
+
+    /// Whether `ollama` is already installed on a compatible architecture path.
+    static var isOllamaInstalled: Bool {
+        let candidates = orderedHomebrewBinPaths.map { "\($0)/ollama" } + ["/usr/local/bin/ollama", "/Applications/Ollama.app/Contents/Resources/ollama"]
+        return candidates.contains { FileManager.default.isExecutableFile(atPath: $0) && isExecutableCompatibleWithCurrentArch($0) }
+    }
+
+    /// One-click Terminal command to install Ollama and pull the right starter model for this Mac.
+    static var localAIQuickSetupCommand: String {
+        let prefix = preferredHomebrewPrefix
+        let model = recommendedLocalModelTag
+        return #"eval "$(\#(prefix)/bin/brew shellenv)" 2>/dev/null; (command -v ollama >/dev/null 2>&1 || brew install ollama) && (pgrep -x ollama >/dev/null 2>&1 || brew services start ollama 2>/dev/null || (ollama serve >/dev/null 2>&1 & sleep 2)) && ollama pull \#(model)"#
+    }
+
+    /// One-click Terminal command to pull the recommended starter model into Ollama.
+    static var localAIPullRecommendedCommand: String {
+        let prefix = preferredHomebrewPrefix
+        let model = recommendedLocalModelTag
+        return #"eval "$(\#(prefix)/bin/brew shellenv)" 2>/dev/null; ollama pull \#(model)"#
+    }
+
     /// One-line Homebrew + tools setup command tailored to this Mac's chip.
     static var mediaDockQuickSetupCommand: String {
         if isIntel {

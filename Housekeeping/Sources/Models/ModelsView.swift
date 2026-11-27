@@ -34,6 +34,7 @@ struct ModelsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
+                hardwareAdvisorCard
                 memoryPanel
                 filterBar
 
@@ -118,6 +119,97 @@ struct ModelsView: View {
                 Task { await model.read() }
             }
         }
+    }
+
+    // MARK: Smart Hardware Advisor
+
+    private var hardwareAdvisorCard: some View {
+        let isIntel = HardwareProfile.isIntel
+        let ramGB = HardwareProfile.physicalMemoryGB
+        let recommendedModel = HardwareProfile.recommendedLocalModelTag
+        let hasOllama = HardwareProfile.isOllamaInstalled
+
+        return ThemePanel(padding: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 10) {
+                    Image(systemName: isIntel ? "cpu" : "cpu.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(style.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("This Mac: \(HardwareProfile.displayLabel) · \(ramGB) GB RAM")
+                            .font(style.labelFont)
+                        Text(isIntel
+                             ? "Intel Mac detected. Apple Silicon MLX engines do not run on Intel chips — use Ollama or LM Studio (GGUF models) or Housekeeper's built-in CPU chat instead."
+                             : "Apple Silicon detected. Fast unified-memory MLX, Ollama, and LM Studio all run natively on this Mac.")
+                            .font(style.smallFont)
+                            .foregroundColor(style.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                }
+
+                HStack(spacing: 12) {
+                    Label("Best runtime: \(HardwareProfile.recommendedLocalRuntimeLabel)", systemImage: "checkmark.circle.fill")
+                        .font(style.smallFont)
+                        .foregroundColor(style.text)
+                    Label("Recommended starter: \(recommendedModel)", systemImage: "sparkles")
+                        .font(style.smallFont)
+                        .foregroundColor(style.accent)
+                }
+
+                HStack(spacing: 8) {
+                    if !hasOllama {
+                        ThemeButton(
+                            title: "Install Ollama & \(recommendedModel) in Terminal",
+                            systemImage: "arrow.down.circle.fill",
+                            isPrimary: true,
+                            help: "Installs Ollama via Homebrew (\(HardwareProfile.preferredHomebrewPrefix)/bin) and downloads \(recommendedModel), sized for your \(ramGB) GB \(HardwareProfile.kind) Mac."
+                        ) {
+                            runInTerminal(HardwareProfile.localAIQuickSetupCommand)
+                        }
+                    } else {
+                        ThemeButton(
+                            title: "Download \(recommendedModel) in Terminal",
+                            systemImage: "arrow.down.circle",
+                            isPrimary: model.groups.allSatisfy(\.models.isEmpty),
+                            help: "Pulls \(recommendedModel) into Ollama — sized to run smoothly on your \(ramGB) GB \(HardwareProfile.kind) Mac."
+                        ) {
+                            runInTerminal(HardwareProfile.localAIPullRecommendedCommand)
+                        }
+                    }
+
+                    ThemeButton(
+                        title: "Copy Setup Command",
+                        systemImage: "doc.on.doc",
+                        help: "Copy the tailored \(HardwareProfile.kind) local AI setup command to your clipboard."
+                    ) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(
+                            hasOllama ? HardwareProfile.localAIPullRecommendedCommand : HardwareProfile.localAIQuickSetupCommand,
+                            forType: .string
+                        )
+                    }
+                    Spacer()
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func runInTerminal(_ command: String) {
+        let escaped = command
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "Terminal"
+            activate
+            do script "\(escaped)"
+        end tell
+        """
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        try? process.run()
     }
 
     // MARK: Filter Bar
