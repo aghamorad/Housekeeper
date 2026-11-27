@@ -1476,7 +1476,7 @@ struct MenuBarPanel: View {
 
             HStack(spacing: 6) {
                 if let onCloudflareVPN {
-                    DoorButton(title: "Clean VPN", icon: "checkmark.shield.fill", action: leaving(onCloudflareVPN))
+                    DoorButton(title: "Clean VPN", icon: "checkmark.shield", action: leaving(onCloudflareVPN))
                 } else {
                     DoorButton(title: "Scan Mac", icon: "magnifyingglass", action: leaving(onScan))
                 }
@@ -1491,16 +1491,16 @@ struct MenuBarPanel: View {
                     DoorButton(title: "Updates", icon: "arrow.triangle.2.circlepath", action: leaving(onUpdates))
                 }
                 if let onDNS {
-                    DoorButton(title: "DNS", icon: "globe.badge.chevron.backward", action: leaving(onDNS))
+                    DoorButton(title: "DNS", icon: "globe", action: leaving(onDNS))
                 } else {
-                    DoorButton(title: "Cooling", icon: "fan.fill", action: leaving(onFans))
+                    DoorButton(title: "Cooling", icon: "fanblades", action: leaving(onFans))
                 }
             }
 
             HStack(spacing: 6) {
-                DoorButton(title: "MediaDock", icon: "play.rectangle.fill", action: leaving(onMediaDock))
-                DoorButton(title: "Bookbind", icon: "book.closed.fill", action: leaving(onBookbind))
-                DoorButton(title: "Cooling", icon: "fan.fill", action: leaving(onFans))
+                DoorButton(title: "MediaDock", icon: "play.rectangle", action: leaving(onMediaDock))
+                DoorButton(title: "Bookbind", icon: "book.closed", action: leaving(onBookbind))
+                DoorButton(title: "Cooling", icon: "fanblades", action: leaving(onFans))
                 DoorButton(
                     title: showMoreTools ? "Less" : "More Tools",
                     icon: showMoreTools ? "chevron.up" : "square.grid.2x2",
@@ -1709,18 +1709,22 @@ struct DoorButton: View {
             HousekeepingFeedback.press()
             action()
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: 5) {
                 Image(systemName: icon)
-                    .font(.system(size: 14.5, weight: .semibold))
+                    .font(.system(size: 14, weight: .medium))
+                    .symbolRenderingMode(.monochrome)
+                    .frame(width: 20, height: 18, alignment: .center)
                     .foregroundStyle(isHovered ? HousekeepingInk.redLifted : HousekeepingInk.text)
                     .scaleEffect(isHovered && !reduceMotion ? 1.09 : 1.0)
                 Text(title)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                     .foregroundStyle(HousekeepingInk.text)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(isHovered ? HousekeepingInk.red.opacity(0.18) : HousekeepingInk.surfaceRaised)

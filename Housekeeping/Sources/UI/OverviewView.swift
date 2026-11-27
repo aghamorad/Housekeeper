@@ -608,10 +608,11 @@ struct SidebarNavigationRow: View {
         Button(action: action) {
             HStack(spacing: 9) {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: selected ? .semibold : .regular))
+                    .font(.system(size: 14, weight: selected ? .semibold : .medium))
+                    .symbolRenderingMode(.monochrome)
                     .foregroundStyle(selected ? style.accent : (hovering ? style.text : .secondary))
                     .scaleEffect(hovering && !selected && !reduceMotion ? 1.07 : 1.0)
-                    .frame(width: 18)
+                    .frame(width: 18, height: 18, alignment: .center)
                 Text(title)
                     .font(.system(size: 13, weight: selected ? .semibold : .regular))
                     .foregroundStyle(selected ? style.text : (hovering ? style.text : style.secondaryText))
