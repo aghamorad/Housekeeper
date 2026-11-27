@@ -1504,7 +1504,11 @@ struct MenuBarPanel: View {
                 DoorButton(
                     title: showMoreTools ? "Less" : "More Tools",
                     icon: showMoreTools ? "chevron.up" : "square.grid.2x2",
-                    action: { showMoreTools.toggle() }
+                    action: {
+                        withAnimation(HousekeepingMotion.settle) {
+                            showMoreTools.toggle()
+                        }
+                    }
                 )
             }
 
@@ -1535,6 +1539,7 @@ struct MenuBarPanel: View {
                         DoorButton(title: "Ask AI", icon: "bubble.left.and.text.bubble.right", action: leaving(onAsk))
                     }
                 }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             HStack(spacing: 8) {
@@ -1696,32 +1701,53 @@ struct DoorButton: View {
     let icon: String
     let action: () -> Void
 
+    @State private var isHovered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        Button(action: action) {
+        Button {
+            HousekeepingFeedback.press()
+            action()
+        } label: {
             VStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 14.5, weight: .semibold))
+                    .foregroundStyle(isHovered ? HousekeepingInk.redLifted : HousekeepingInk.text)
+                    .scaleEffect(isHovered && !reduceMotion ? 1.09 : 1.0)
                 Text(title)
-                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .lineLimit(1)
+                    .foregroundStyle(HousekeepingInk.text)
             }
-            .foregroundStyle(HousekeepingInk.text)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(HousekeepingInk.surfaceRaised)
+                    .fill(isHovered ? HousekeepingInk.red.opacity(0.18) : HousekeepingInk.surfaceRaised)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(HousekeepingInk.hairline, lineWidth: 1)
+                    .stroke(isHovered ? HousekeepingInk.redLifted.opacity(0.55) : HousekeepingInk.hairline, lineWidth: 1)
             )
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .animation(HousekeepingMotion.hover, value: isHovered)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(DoorPressableStyle())
+        .onHover { isHovered = $0 }
         // A plain button still takes keyboard focus, and the panel opens already
         // key — the first button would arrive wearing a blue ring nobody put there.
         .focusable(false)
+    }
+}
+
+private struct DoorPressableStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.94 : 1.0)
+            .opacity(configuration.isPressed ? 0.88 : 1.0)
+            .animation(HousekeepingMotion.press, value: configuration.isPressed)
     }
 }
 
