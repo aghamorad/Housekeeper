@@ -44,26 +44,25 @@ struct RetroColors {
 /// here is a mood; it is the same red, from the same picture.
 /// The colour Housekeeping wears, taken from the octopus in its icon.
 struct HousekeepingInk {
-    static let red = Color(red: 204/255, green: 46/255, blue: 52/255)
-    static let redLifted = Color(red: 248/255, green: 118/255, blue: 108/255)
-    static let redShaded = Color.white.opacity(0.10)
-    static let hairline = Color.white.opacity(0.11)
+    static let red = Color(red: 158/255, green: 34/255, blue: 28/255)
+    static let redLifted = Color(red: 232/255, green: 94/255, blue: 78/255)
+    static let redShaded = Color(red: 96/255, green: 18/255, blue: 14/255)
+    static let hairline = Color(red: 156/255, green: 48/255, blue: 40/255).opacity(0.48)
 
-    static let surface = Color(red: 20/255, green: 19/255, blue: 24/255)
-    static let surfaceRaised = Color.white.opacity(0.065)
+    static let surface = Color(red: 40/255, green: 8/255, blue: 7/255)
+    static let surfaceRaised = Color(red: 66/255, green: 16/255, blue: 14/255).opacity(0.76)
 
-    static let text = Color(red: 245/255, green: 243/255, blue: 248/255)
-    static let secondaryText = Color(red: 176/255, green: 170/255, blue: 184/255)
+    static let text = Color(red: 246/255, green: 234/255, blue: 231/255)
+    static let secondaryText = Color(red: 210/255, green: 172/255, blue: 164/255)
 
-    static let positive = Color(red: 104/255, green: 214/255, blue: 158/255)
-    static let caution = Color(red: 242/255, green: 184/255, blue: 84/255)
-    static let negative = Color(red: 255/255, green: 102/255, blue: 92/255)
+    static let positive = Color(red: 111/255, green: 206/255, blue: 156/255)
+    static let caution = Color(red: 238/255, green: 176/255, blue: 84/255)
+    static let negative = Color(red: 255/255, green: 108/255, blue: 88/255)
 }
 
-/// The signature identity shared by the modern window and its controls.
-/// Sleek macOS 26/27 Liquid Glass: translucent obsidian-neutral ground with
-/// vibrant ruby-oxblood jewel accents in Dark Mode; airy luminous frosted glass
-/// with rich crimson-oxblood accents in Light Mode — never flat muddy brown.
+/// The signature trademark identity shared by the modern window and its controls:
+/// rich translucent maroon/oxblood Liquid Glass in Dark Mode and warm parchment-rose
+/// glass in Light Mode — preserving Housekeeper's unmistakable maroon heritage.
 enum HousekeepingPalette {
     private static func adaptive(dark: (CGFloat, CGFloat, CGFloat), light: (CGFloat, CGFloat, CGFloat)) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
@@ -72,12 +71,12 @@ enum HousekeepingPalette {
         })
     }
 
-    static let background = adaptive(dark: (18, 17, 20), light: (246, 245, 247))
-    static let sidebar = adaptive(dark: (24, 22, 26), light: (242, 240, 243))
-    static let panel = adaptive(dark: (34, 31, 36), light: (255, 255, 255))
-    static let raised = adaptive(dark: (48, 43, 50), light: (240, 238, 242))
-    static let accent = adaptive(dark: (242, 114, 102), light: (178, 38, 42))
-    static let button = adaptive(dark: (196, 48, 52), light: (178, 38, 42))
+    static let background = adaptive(dark: (38, 10, 12), light: (249, 244, 241))
+    static let sidebar = adaptive(dark: (50, 14, 17), light: (244, 236, 232))
+    static let panel = adaptive(dark: (60, 18, 22), light: (255, 252, 250))
+    static let raised = adaptive(dark: (76, 24, 29), light: (242, 231, 226))
+    static let accent = adaptive(dark: (238, 148, 134), light: (158, 47, 39))
+    static let button = adaptive(dark: (182, 38, 38), light: (158, 47, 39))
 }
 
 // MARK: - Retro Typography

@@ -1,3 +1,13 @@
+## 2026-11-28 — Housekeeper 0.38.1 (77): Trademark Maroon Liquid Glass Restored + Full-Bleed Opaque `AppIcon.icns` (Zero White Dock Box)
+
+**What changed:**
+1. **Trademark Maroon / Oxblood Liquid Glass Preserved (`RetroStyles.swift`, `ModernChrome.swift`, `ContentView.swift`, `MenuBarPanel.swift`):**
+   - Kept 100% of the new floating `22pt` Liquid Glass sidebar, floating `22pt` rounded workspace stage, hidden titlebar, `16pt` vitals cards, `14pt` menu bar glass tiles, SF Rounded typography, and `Capsule()` controls.
+   - Restored Housekeeper's signature rich **maroon / oxblood** glass identity across both Dark Mode (`rgb(38,10,12)` / `rgb(50,14,17)` / `rgb(60,18,22)`) and Light Mode (`#F9F4F1`), including the frosted maroon Menu Bar Popover (`HousekeepingInk.surface`).
+2. **Eliminated the White Dock Box Forever (`Housekeeping/Resources/AppIcon.png`, `AppIcon.icns`):**
+   - Commit `6100e8b` had reverted `AppIcon.icns` to `hasAlpha: yes` (transparent corners), causing macOS 26/27 to shrink the icon inside a thick white squircle-jail plate.
+   - Re-composited the canonical Liquid Glass octopus icon onto a matching warm maroon edge backdrop (`rgb(118,42,42)`), zoomed `1.09x` edge-to-edge with **zero alpha channel (`hasAlpha: no`)** and zero black corners, and compiled all `.iconset` resolutions into `AppIcon.icns`.
+
 ## 2026-11-28 — Housekeeper 0.38.0 (76): True Floating Liquid Glass Main Shell, Modernized Obsidian-Glass Menu Bar Popover & Clean Up Polish
 
 **What changed (after catching live visual defects in 0.37.1):**

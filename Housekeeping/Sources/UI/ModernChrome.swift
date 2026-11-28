@@ -37,15 +37,15 @@ struct HousekeepingBackdrop: View {
                 HousekeepingPalette.sidebar.opacity(scheme == .dark ? 0.36 : 0.30)
             } else {
                 NativeVisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
-                HousekeepingPalette.background.opacity(scheme == .dark ? 0.76 : 0.68)
+                HousekeepingPalette.background.opacity(scheme == .dark ? 0.84 : 0.78)
                 RadialGradient(
                     colors: [
-                        style.accent.opacity(scheme == .dark ? 0.09 : 0.055),
+                        HousekeepingPalette.button.opacity(scheme == .dark ? 0.22 : 0.08),
                         .clear
                     ],
                     center: .topTrailing,
                     startRadius: 10,
-                    endRadius: 640
+                    endRadius: 680
                 )
             }
         }
@@ -134,22 +134,24 @@ private struct HousekeepingCardChrome: ViewModifier {
                 shape.fill(.ultraThinMaterial)
                 shape.fill(
                     scheme == .dark
-                        ? Color.white.opacity(prominent ? 0.065 : (highlighted ? 0.075 : 0.042))
-                        : Color.white.opacity(prominent ? 0.84 : 0.72)
+                        ? HousekeepingPalette.panel.opacity(prominent ? 0.72 : (highlighted ? 0.78 : 0.56))
+                        : Color.white.opacity(prominent ? 0.86 : 0.74)
                 )
                 if highlighted {
-                    shape.fill(style.accent.opacity(scheme == .dark ? 0.11 : 0.07))
+                    shape.fill(style.accent.opacity(scheme == .dark ? 0.14 : 0.08))
                 }
             }
             .overlay {
                 shape.strokeBorder(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(scheme == .dark ? (highlighted ? 0.28 : 0.17) : 0.96),
+                            scheme == .dark
+                                ? Color(red: 244/255, green: 176/255, blue: 164/255).opacity(highlighted ? 0.38 : 0.22)
+                                : Color.white.opacity(0.96),
                             highlighted
                                 ? style.accent.opacity(0.55)
-                                : Color.white.opacity(scheme == .dark ? 0.05 : 0.35),
-                            Color.primary.opacity(scheme == .dark ? 0.04 : 0.07)
+                                : (scheme == .dark ? HousekeepingPalette.button.opacity(0.24) : Color.white.opacity(0.35)),
+                            Color.primary.opacity(scheme == .dark ? 0.06 : 0.07)
                         ],
                         startPoint: .top,
                         endPoint: .bottom

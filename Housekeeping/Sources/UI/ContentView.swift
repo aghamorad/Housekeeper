@@ -522,14 +522,17 @@ struct ScreenChrome<Content: View>: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background {
                         RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(Color.white.opacity(0.032))
+                            .fill(HousekeepingPalette.panel.opacity(0.34))
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: 22, style: .continuous)
                             .strokeBorder(
                                 LinearGradient(
-                                    colors: [Color.white.opacity(0.16), Color.white.opacity(0.05)],
+                                    colors: [
+                                        HousekeepingPalette.accent.opacity(0.24),
+                                        HousekeepingPalette.button.opacity(0.14)
+                                    ],
                                     startPoint: .top,
                                     endPoint: .bottom
                                 ),
@@ -1041,15 +1044,18 @@ private struct JobBar: View {
         }
         .background {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color.white.opacity(0.04))
+                .fill(HousekeepingPalette.sidebar.opacity(0.62))
         }
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .liquidGlassChrome(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .liquidGlassChrome(in: RoundedRectangle(cornerRadius: 22, style: .continuous), tint: HousekeepingPalette.button.opacity(0.18))
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .strokeBorder(
                     LinearGradient(
-                        colors: [Color.white.opacity(0.20), Color.white.opacity(0.05)],
+                        colors: [
+                            HousekeepingPalette.accent.opacity(0.28),
+                            HousekeepingPalette.button.opacity(0.16)
+                        ],
                         startPoint: .top,
                         endPoint: .bottom
                     ),
