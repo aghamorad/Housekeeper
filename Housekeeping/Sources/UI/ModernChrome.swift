@@ -207,7 +207,14 @@ struct HousekeepingButtonStyle: ButtonStyle {
                 if kind == .quiet {
                     shape.fill(Color.primary.opacity(hovering ? 0.08 : 0))
                 } else if #available(macOS 26.0, *) {
-                    Color.clear
+                    switch kind {
+                    case .primary:
+                        shape.fill(style.accentShaded.opacity(enabled ? 0.72 : 0.25))
+                    case .destructive:
+                        shape.fill(Self.destructiveCrimson.opacity(enabled ? 0.80 : 0.25))
+                    case .secondary, .quiet:
+                        Color.clear
+                    }
                 } else {
                     switch kind {
                     case .primary:

@@ -642,7 +642,7 @@ struct ScreenChrome<Content: View>: View {
             }
         }
         .padding(.horizontal, 18)
-        .padding(.top, 12)
+        .padding(.top, 34)
         .padding(.bottom, 10)
     }
 
