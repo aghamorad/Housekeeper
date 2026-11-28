@@ -127,38 +127,77 @@ struct ModelsView: View {
         let isIntel = HardwareProfile.isIntel
         let ramGB = HardwareProfile.physicalMemoryGB
         let recommendedModel = HardwareProfile.recommendedLocalModelTag
+        let hasOMLX = HardwareProfile.isOMLXInstalled
+        let hasMLX = HardwareProfile.isMLXInstalled
         let hasOllama = HardwareProfile.isOllamaInstalled
+        let installedRuntimes = HardwareProfile.installedLocalRuntimes
+        let hasNativeAppleSiliconAI = !isIntel && (hasOMLX || hasMLX)
+        let localModelCount = model.groups.filter { $0.runtime != .huggingFace }.flatMap(\.models).count
 
         return ThemePanel(padding: 14) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .center, spacing: 10) {
-                    Image(systemName: isIntel ? "cpu" : "cpu.fill")
+                    Image(systemName: hasNativeAppleSiliconAI ? "checkmark.seal.fill" : (isIntel ? "cpu" : "cpu.fill"))
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(style.accent)
+                        .foregroundColor(hasNativeAppleSiliconAI ? style.positive : style.accent)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("This Mac: \(HardwareProfile.displayLabel) · \(ramGB) GB RAM")
                             .font(style.labelFont)
-                        Text(isIntel
-                             ? "Intel Mac detected. Apple Silicon MLX engines do not run on Intel chips — use Ollama or LM Studio (GGUF models) or Housekeeper's built-in CPU chat instead."
-                             : "Apple Silicon detected. Fast unified-memory MLX, Ollama, and LM Studio all run natively on this Mac.")
-                            .font(style.smallFont)
-                            .foregroundColor(style.secondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Text(advisorExplanation(
+                            isIntel: isIntel,
+                            hasOMLX: hasOMLX,
+                            hasMLX: hasMLX,
+                            installedRuntimes: installedRuntimes,
+                            localModelCount: localModelCount
+                        ))
+                        .font(style.smallFont)
+                        .foregroundColor(style.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
                 }
 
                 HStack(spacing: 12) {
-                    Label("Best runtime: \(HardwareProfile.recommendedLocalRuntimeLabel)", systemImage: "checkmark.circle.fill")
-                        .font(style.smallFont)
-                        .foregroundColor(style.text)
-                    Label("Recommended starter: \(recommendedModel)", systemImage: "sparkles")
-                        .font(style.smallFont)
-                        .foregroundColor(style.accent)
+                    if !installedRuntimes.isEmpty {
+                        Label("Detected: \(installedRuntimes.joined(separator: ", "))", systemImage: "checkmark.circle.fill")
+                            .font(style.smallFont)
+                            .foregroundColor(style.positive)
+                    } else {
+                        Label("Best runtime: \(HardwareProfile.recommendedLocalRuntimeLabel)", systemImage: "checkmark.circle.fill")
+                            .font(style.smallFont)
+                            .foregroundColor(style.text)
+                    }
+                    if !hasNativeAppleSiliconAI {
+                        Label("Recommended starter: \(recommendedModel)", systemImage: "sparkles")
+                            .font(style.smallFont)
+                            .foregroundColor(style.accent)
+                    }
                 }
 
                 HStack(spacing: 8) {
-                    if !hasOllama {
+                    if hasNativeAppleSiliconAI {
+                        if let appPath = HardwareProfile.omlxAppPath {
+                            ThemeButton(
+                                title: "Open oMLX",
+                                systemImage: "arrow.up.forward.app.fill",
+                                isPrimary: true,
+                                help: "Opens oMLX.app to manage your native Apple Silicon MLX models."
+                            ) {
+                                NSWorkspace.shared.open(URL(fileURLWithPath: appPath))
+                            }
+                        }
+                        let modelsFolder = FileManager.default.homeDirectoryForCurrentUser
+                            .appendingPathComponent(hasOMLX ? ".omlx/models" : ".mlx-lm/models", isDirectory: true)
+                        if FileManager.default.fileExists(atPath: modelsFolder.path) {
+                            ThemeButton(
+                                title: "Show Models Folder",
+                                systemImage: "folder",
+                                help: "Opens \(modelsFolder.path) in Finder."
+                            ) {
+                                NSWorkspace.shared.open(modelsFolder)
+                            }
+                        }
+                    } else if !hasOllama {
                         ThemeButton(
                             title: "Install Ollama & \(recommendedModel) in Terminal",
                             systemImage: "arrow.down.circle.fill",
@@ -167,33 +206,62 @@ struct ModelsView: View {
                         ) {
                             runInTerminal(HardwareProfile.localAIQuickSetupCommand)
                         }
+                        ThemeButton(
+                            title: "Copy Setup Command",
+                            systemImage: "doc.on.doc",
+                            help: "Copy the tailored \(HardwareProfile.kind) local AI setup command to your clipboard."
+                        ) {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(HardwareProfile.localAIQuickSetupCommand, forType: .string)
+                        }
                     } else {
                         ThemeButton(
                             title: "Download \(recommendedModel) in Terminal",
                             systemImage: "arrow.down.circle",
-                            isPrimary: model.groups.allSatisfy(\.models.isEmpty),
+                            isPrimary: localModelCount == 0,
                             help: "Pulls \(recommendedModel) into Ollama — sized to run smoothly on your \(ramGB) GB \(HardwareProfile.kind) Mac."
                         ) {
                             runInTerminal(HardwareProfile.localAIPullRecommendedCommand)
                         }
-                    }
-
-                    ThemeButton(
-                        title: "Copy Setup Command",
-                        systemImage: "doc.on.doc",
-                        help: "Copy the tailored \(HardwareProfile.kind) local AI setup command to your clipboard."
-                    ) {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(
-                            hasOllama ? HardwareProfile.localAIPullRecommendedCommand : HardwareProfile.localAIQuickSetupCommand,
-                            forType: .string
-                        )
+                        ThemeButton(
+                            title: "Copy Setup Command",
+                            systemImage: "doc.on.doc",
+                            help: "Copy the tailored \(HardwareProfile.kind) local AI setup command to your clipboard."
+                        ) {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(HardwareProfile.localAIPullRecommendedCommand, forType: .string)
+                        }
                     }
                     Spacer()
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func advisorExplanation(
+        isIntel: Bool,
+        hasOMLX: Bool,
+        hasMLX: Bool,
+        installedRuntimes: [String],
+        localModelCount: Int
+    ) -> String {
+        if isIntel {
+            return "Intel Mac detected. Apple Silicon MLX engines do not run on Intel chips — use Ollama or LM Studio (GGUF models) or Housekeeper's built-in CPU chat instead."
+        }
+        if hasOMLX {
+            let countPhrase = localModelCount > 0
+                ? "with \(localModelCount) local model\(localModelCount == 1 ? "" : "s") already on disk"
+                : "and ready for native Apple Silicon MLX models"
+            return "oMLX is already set up on this Mac \(countPhrase). You do not need Ollama or llama.cpp — MLX runs faster and uses unified memory directly."
+        }
+        if hasMLX {
+            return "Native Apple Silicon MLX models are already installed on this Mac — no Ollama or llama.cpp install needed."
+        }
+        if !installedRuntimes.isEmpty {
+            return "Apple Silicon detected with \(installedRuntimes.joined(separator: ", ")) installed. Native MLX (such as oMLX) is also supported on this chip."
+        }
+        return "Apple Silicon detected. Fast unified-memory MLX (such as oMLX), Ollama, and LM Studio all run natively on this Mac."
     }
 
     private func runInTerminal(_ command: String) {
@@ -233,13 +301,13 @@ struct ModelsView: View {
                             .background(selectedFilter == filter ? Color.white.opacity(0.2) : style.groupingBackground)
                             .clipShape(Capsule())
                     }
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .foregroundColor(selectedFilter == filter ? .white : style.text)
                     .background(selectedFilter == filter ? style.accent : style.groupingBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(Capsule())
                     .overlay(
-                        RoundedRectangle(cornerRadius: 6)
+                        Capsule()
                             .stroke(selectedFilter == filter ? style.accent : style.border, lineWidth: 1)
                     )
                 }

@@ -24,6 +24,7 @@ import Foundation
 // MARK: - What a row is
 
 enum ModelRuntime: String, CaseIterable, Identifiable {
+    case omlx
     case mlx
     case drawThings
     case comfyUI
@@ -37,6 +38,7 @@ enum ModelRuntime: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .omlx: return "oMLX (Apple Silicon MLX)"
         case .mlx: return "Apple Silicon MLX & Local Registry"
         case .drawThings: return "Draw Things (Metal / MPS)"
         case .comfyUI: return "ComfyUI"
@@ -52,6 +54,7 @@ enum ModelRuntime: String, CaseIterable, Identifiable {
     /// which of these is which. The last one is not a runtime at all, and says so.
     var summary: String {
         switch self {
+        case .omlx: return "Native Apple Silicon MLX server with KV caching and automatic memory management (~/.omlx/models)."
         case .mlx: return "Apple Silicon MLX model store and active runtime on port 18434. Models can be loaded into memory or unloaded to free RAM."
         case .drawThings: return "Native Metal-accelerated image generation engine for Apple Silicon (~/Library/Containers/com.liuliu.draw-things)."
         case .comfyUI: return "Node-based visual image synthesis workbench and local server."
@@ -194,6 +197,7 @@ final class LocalModelInventory: ObservableObject {
         note = nil
         memory = ModelMemory.read()
 
+        async let omlx = readOMLX()
         async let mlx = readMLX()
         async let ollama = readOllama()
         async let lmStudio = readLMStudio()
@@ -201,7 +205,7 @@ final class LocalModelInventory: ObservableObject {
         async let housekeeper = readHousekeeper()
         async let cache = readHuggingFace()
 
-        let found = await [mlx, ollama, lmStudio, housekeeper, hermes, cache]
+        let found = await [omlx, mlx, ollama, lmStudio, housekeeper, hermes, cache]
         groups = found
             .filter { !$0.models.isEmpty || $0.hint != nil }
             .sorted { order($0.runtime) < order($1.runtime) }
@@ -212,6 +216,137 @@ final class LocalModelInventory: ObservableObject {
 
     private func order(_ runtime: ModelRuntime) -> Int {
         ModelRuntime.allCases.firstIndex(of: runtime) ?? 0
+    }
+
+    // MARK: - oMLX (Native Apple Silicon MLX Server)
+
+    private func readOMLX() async -> ModelGroup {
+        var group = ModelGroup(runtime: .omlx)
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let omlxRoot = "\(home)/.omlx"
+        let settingsPath = "\(omlxRoot)/settings.json"
+        let modelSettingsPath = "\(omlxRoot)/model_settings.json"
+
+        var host = "127.0.0.1"
+        var port = 8000
+        var modelDirs: [String] = ["\(omlxRoot)/models"]
+
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: settingsPath)),
+           let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            if let server = root["server"] as? [String: Any] {
+                if let h = server["host"] as? String, !h.isEmpty { host = h }
+                if let p = server["port"] as? Int, p > 0 { port = p }
+            }
+            if let modelCfg = root["model"] as? [String: Any] {
+                if let dirs = modelCfg["model_dirs"] as? [String], !dirs.isEmpty {
+                    modelDirs = dirs
+                } else if let dir = modelCfg["model_dir"] as? String, !dir.isEmpty {
+                    modelDirs = [dir]
+                }
+            }
+        }
+
+        let perModelSettings: [String: [String: Any]] = {
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: modelSettingsPath)),
+                  let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  let modelsMap = root["models"] as? [String: [String: Any]] else {
+                return [:]
+            }
+            return modelsMap
+        }()
+
+        // Non-destructive read-only probe of live oMLX server (if running).
+        let baseURL = URL(string: "http://\(host):\(port)")
+        let liveModels = baseURL != nil ? await getJSON(baseURL!.appendingPathComponent("v1/models")) : nil
+        let isServerRunning = liveModels != nil
+
+        var liveLoadedIDs = Set<String>()
+        if let items = liveModels?["data"] as? [[String: Any]] {
+            for item in items {
+                if let id = item["id"] as? String {
+                    let loadedFlag = (item["loaded"] as? Bool) ?? (item["is_loaded"] as? Bool) ?? false
+                    if loadedFlag { liveLoadedIDs.insert(id) }
+                }
+            }
+        }
+
+        var models: [LocalModel] = []
+        var seenPaths = Set<String>()
+
+        for dirPath in modelDirs {
+            let dirURL = URL(fileURLWithPath: dirPath)
+            guard let entries = try? FileManager.default.contentsOfDirectory(
+                at: dirURL,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+
+            for entry in entries {
+                var isDir: ObjCBool = false
+                let resolved = entry.resolvingSymlinksInPath()
+                guard FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDir),
+                      isDir.boolValue,
+                      !seenPaths.contains(resolved.path) else { continue }
+                seenPaths.insert(resolved.path)
+
+                let name = entry.lastPathComponent
+                let bytes = await Task.detached(priority: .utility) { Self.directorySize(resolved) }.value
+                let cfg = perModelSettings[name]
+                let isDefault = (cfg?["is_default"] as? Bool) == true
+                let isLoaded = isServerRunning && (liveLoadedIDs.contains(name) || liveLoadedIDs.contains(resolved.path))
+
+                var facts: [String] = ["oMLX", "Apple Silicon MLX"]
+                if isLoaded { facts.append("IN MEMORY (:\(port))") }
+                if isDefault { facts.append("Default") }
+                if name.lowercased().contains("4bit") { facts.append("4-bit") }
+                if name.lowercased().contains("8bit") { facts.append("8-bit") }
+                if let ctx = cfg?["max_context_window"] as? Int, ctx > 0 {
+                    facts.append("\(ctx / 1024)K ctx")
+                }
+                if bytes > 0 {
+                    facts.append(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))
+                }
+
+                models.append(LocalModel(
+                    id: "omlx:\(entry.path)",
+                    runtime: .omlx,
+                    name: Self.formatMLXModelName(name),
+                    facts: facts,
+                    bytes: bytes,
+                    loaded: isLoaded,
+                    residentBytes: nil,
+                    path: resolved.path,
+                    control: .none,
+                    reference: name,
+                    note: isServerRunning
+                        ? "Managed by oMLX on \(host):\(port) with automatic memory guard and LRU eviction."
+                        : "Stored in ~/.omlx/models. Open oMLX to serve it on \(host):\(port) with native Apple Silicon acceleration.",
+                    necessity: .necessary,
+                    intersections: ["oMLX.app (:\(port))", "Local AI & Vision Agents"],
+                    intersectionExplanation: "Primary native Apple Silicon MLX model managed by oMLX. Faster and leaner than Ollama/llama.cpp on M-series Macs."
+                ))
+            }
+        }
+
+        group.models = models.sorted {
+            if $0.loaded != $1.loaded { return $0.loaded && !$1.loaded }
+            return ($0.bytes ?? 0) > ($1.bytes ?? 0)
+        }
+
+        if let reason = HardwareProfile.mlxUnavailableReason {
+            if !group.models.isEmpty { group.hint = reason }
+            return group
+        }
+
+        if !group.models.isEmpty {
+            group.hint = isServerRunning
+                ? "oMLX is live on \(host):\(port) with \(group.models.count) native MLX model\(group.models.count == 1 ? "" : "s") ready."
+                : "oMLX is installed with \(group.models.count) native MLX model\(group.models.count == 1 ? "" : "s") on disk (server currently idle — open oMLX to serve on :\(port))."
+        } else if HardwareProfile.isOMLXInstalled {
+            group.hint = "oMLX is installed, with no model folders in ~/.omlx/models yet."
+        }
+
+        return group
     }
 
     // MARK: - Apple Silicon MLX & Local Registry
@@ -1180,6 +1315,7 @@ final class LocalModelInventory: ObservableObject {
         note = "Loading \(model.name)…"
 
         switch model.runtime {
+        case .omlx: break
         case .mlx: await loadInMLX(model)
         case .hermes: await loadInHermes(model)
         case .ollama: await loadInOllama(model)
@@ -1217,6 +1353,7 @@ final class LocalModelInventory: ObservableObject {
         note = "Unloading \(model.name)…"
 
         switch model.runtime {
+        case .omlx: break
         case .mlx, .hermes: await unloadHermes()
         case .ollama: await unloadFromOllama(model)
         case .lmStudio: await unloadFromLMStudio(model)

@@ -38,6 +38,7 @@ enum HousekeeperConversation {
 
         if modelQuestion && locationQuestion {
             let known: [(String, String)] = [
+                ("oMLX models (Apple Silicon MLX)", ".omlx/models"),
                 ("Housekeeping's own chat models", "Library/Application Support/Housekeeping/Models"),
                 ("MLX models", ".mlx-lm/models"),
                 ("Local model registry", "Models"),

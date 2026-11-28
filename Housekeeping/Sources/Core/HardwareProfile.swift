@@ -144,13 +144,60 @@ enum HardwareProfile {
 
     /// Plain-language runtime recommendation for this Mac.
     static var recommendedLocalRuntimeLabel: String {
-        isAppleSilicon ? "MLX, Ollama, or LM Studio" : "Ollama or LM Studio (GGUF — CPU mode)"
+        isAppleSilicon ? "oMLX / Apple Silicon MLX (or Ollama / LM Studio)" : "Ollama or LM Studio (GGUF — CPU mode)"
+    }
+
+    /// Path to oMLX.app if installed.
+    static var omlxAppPath: String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        for candidate in ["/Applications/oMLX.app", "\(home)/Applications/oMLX.app"] {
+            if FileManager.default.fileExists(atPath: candidate) { return candidate }
+        }
+        return nil
+    }
+
+    /// Whether oMLX (native Apple Silicon MLX server) is installed or configured on this Mac.
+    static var isOMLXInstalled: Bool {
+        guard isAppleSilicon else { return false }
+        if omlxAppPath != nil { return true }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return FileManager.default.fileExists(atPath: "\(home)/.omlx/settings.json")
+            || FileManager.default.fileExists(atPath: "\(home)/.omlx/models")
+    }
+
+    /// Whether LM Studio is installed on this Mac.
+    static var isLMStudioInstalled: Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return FileManager.default.fileExists(atPath: "/Applications/LM Studio.app")
+            || FileManager.default.fileExists(atPath: "\(home)/Applications/LM Studio.app")
+    }
+
+    /// Whether any MLX runtime or local MLX model store exists on Apple Silicon.
+    static var isMLXInstalled: Bool {
+        guard isAppleSilicon else { return false }
+        if isOMLXInstalled { return true }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if let entries = try? FileManager.default.contentsOfDirectory(atPath: "\(home)/.mlx-lm/models"),
+           entries.contains(where: { !$0.hasPrefix(".") && $0 != "current" }) {
+            return true
+        }
+        return false
     }
 
     /// Whether `ollama` is already installed on a compatible architecture path.
     static var isOllamaInstalled: Bool {
         let candidates = orderedHomebrewBinPaths.map { "\($0)/ollama" } + ["/usr/local/bin/ollama", "/Applications/Ollama.app/Contents/Resources/ollama"]
         return candidates.contains { FileManager.default.isExecutableFile(atPath: $0) && isExecutableCompatibleWithCurrentArch($0) }
+    }
+
+    /// Human-readable list of local AI runtimes already installed on this Mac.
+    static var installedLocalRuntimes: [String] {
+        var found: [String] = []
+        if isOMLXInstalled { found.append("oMLX (Apple Silicon MLX)") }
+        else if isMLXInstalled { found.append("Apple Silicon MLX") }
+        if isLMStudioInstalled { found.append("LM Studio") }
+        if isOllamaInstalled { found.append("Ollama") }
+        return found
     }
 
     /// One-click Terminal command to install Ollama and pull the right starter model for this Mac.

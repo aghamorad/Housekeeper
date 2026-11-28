@@ -310,8 +310,24 @@ struct EnvironmentAudit: Sendable {
                 let resolved = URL(fileURLWithPath: winner).resolvingSymlinksInPath().path
 
                 // The copy that wins is Homebrew's own: nothing to say.
-                if let prefix = brewPrefix,
-                   resolved.hasPrefix("\(prefix)/Cellar/\(formula.name)/") { continue }
+                // Check both the fully resolved path AND the immediate symlink hop,
+                // because Homebrew formulae such as `node` link `bin/npm` ->
+                // `../Cellar/node/<ver>/bin/npm`, which in turn symlinks into
+                // `lib/node_modules/npm/bin/npm-cli.js`.
+                if let prefix = brewPrefix {
+                    if resolved.hasPrefix("\(prefix)/Cellar/\(formula.name)/")
+                        || resolved.hasPrefix("\(prefix)/opt/\(formula.name)/") {
+                        continue
+                    }
+                    if let firstHop = try? fileManager.destinationOfSymbolicLink(atPath: winner) {
+                        let parent = URL(fileURLWithPath: winner).deletingLastPathComponent()
+                        let hopPath = URL(fileURLWithPath: firstHop, relativeTo: parent).standardizedFileURL.path
+                        if hopPath.hasPrefix("\(prefix)/Cellar/\(formula.name)/")
+                            || hopPath.hasPrefix("\(prefix)/opt/\(formula.name)/") {
+                            continue
+                        }
+                    }
+                }
                 // macOS ships a program by the same name. Not a duplicate.
                 if Self.appleDirectories.contains(where: { winner.hasPrefix("\($0)/") }) { continue }
 
@@ -515,12 +531,17 @@ struct EnvironmentAudit: Sendable {
         }
 
         return references.sorted { $0.key < $1.key }.map { path, places in
-            EnvironmentFinding(
+            let firstPlace = places.first.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? ""
+            let shortPath = (path as NSString).abbreviatingWithTildeInPath
+            let summaryText = places.count == 1
+                ? "Named in \(firstPlace) (missing \(shortPath)). Whatever uses that entry will fail until the path is updated or removed."
+                : "\(places.count) places (including \(firstPlace)) point to \(shortPath), which does not exist."
+            return EnvironmentFinding(
                 id: "deadref:\(path)",
                 category: .brokenLinks,
                 severity: .broken,
                 title: "\(URL(fileURLWithPath: path).lastPathComponent) is referred to, but is not there",
-                summary: "\(places.count == 1 ? "One file starts" : "\(places.count) places start") this program by its full path. Whatever they are, they will fail until it exists again — or until the reference is removed.",
+                summary: summaryText,
                 evidence: ["Missing: \(path)"] + places.prefix(6).map { "Named in: \(($0 as NSString).abbreviatingWithTildeInPath)" },
                 steps: [],
                 fix: nil,

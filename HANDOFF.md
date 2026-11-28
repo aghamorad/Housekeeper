@@ -1,3 +1,15 @@
+## 2026-11-28 — Housekeeper 0.37.1 (75): Terminal Health False-Positive Fix (`npm`/`npx` Chained Symlinks) & First-Class Apple Silicon `oMLX` Detection
+
+**What changed:**
+1. **Terminal Health (`Environment/EnvironmentAudit.swift`):**
+   - Fixed false-positive "Wrong copy" warnings for Homebrew's `node` formula (`npm`, `npx`) and any formula whose Cellar binary chains to another Homebrew-owned symlink (e.g. `/opt/homebrew/bin/npm` → `../Cellar/node/<ver>/bin/npm` → `lib/node_modules/npm/bin/npm-cli.js`). `shadowedCommands` now checks both the final resolved path AND the immediate first-hop symlink destination against `Cellar/<formula>` and `opt/<formula>`.
+   - Enhanced `deadReferences` summaries so each broken-reference finding directly names the offending config file and missing path (e.g. `~/.hermes/config.yaml:375`) right on the card.
+2. **First-Class `oMLX` & Apple Silicon Local AI Detection (`Core/HardwareProfile.swift`, `Models/LocalModels.swift`, `Models/ModelsView.swift`, `Housekeeper/HousekeeperConversation.swift`):**
+   - Added `HardwareProfile.isOMLXInstalled`, `isMLXInstalled`, `isLMStudioInstalled`, `omlxAppPath`, and `installedLocalRuntimes`, recommending **oMLX / Apple Silicon MLX** ahead of Ollama on M-series Macs.
+   - Added `ModelRuntime.omlx` and `LocalModelInventory.readOMLX()` reading `~/.omlx/settings.json` (host, port, `model_dirs`), `~/.omlx/model_settings.json` (`max_context_window`, `is_default`), non-destructive live `/v1/models` checks, and `~/.omlx/models/*` disk sizes & quantization badges.
+   - Updated `ModelsView.hardwareAdvisorCard` so Apple Silicon Macs with oMLX or MLX already installed see a green **Detected: oMLX (Apple Silicon MLX)** card with **Open oMLX** & **Show Models Folder** buttons — never nagging the user to install Ollama or llama.cpp.
+   - Added `oMLX models (.omlx/models)` to `HousekeeperConversation.readOnlyAnswer`.
+
 ## 2026-11-28 — Housekeeper 0.37.0 (74): Single Background Item, Non-Hanging Surfshark Route Sweep, Direct-Clean Uninstaller/Cleaner & Native macOS 26/27 Liquid Glass Overhaul
 
 **What changed:**
