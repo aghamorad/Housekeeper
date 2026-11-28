@@ -44,20 +44,20 @@ struct RetroColors {
 /// here is a mood; it is the same red, from the same picture.
 /// The colour Housekeeping wears, taken from the octopus in its icon.
 struct HousekeepingInk {
-    static let red = Color(red: 144/255, green: 32/255, blue: 24/255)
-    static let redLifted = Color(red: 205/255, green: 74/255, blue: 60/255)
-    static let redShaded = Color(red: 92/255, green: 15/255, blue: 10/255)
-    static let hairline = Color(red: 122/255, green: 34/255, blue: 26/255)
+    static let red = Color(red: 204/255, green: 46/255, blue: 52/255)
+    static let redLifted = Color(red: 248/255, green: 118/255, blue: 108/255)
+    static let redShaded = Color.white.opacity(0.10)
+    static let hairline = Color.white.opacity(0.11)
 
-    static let surface = Color(red: 40/255, green: 7/255, blue: 5/255)
-    static let surfaceRaised = Color(red: 58/255, green: 12/255, blue: 9/255)
+    static let surface = Color(red: 20/255, green: 19/255, blue: 24/255)
+    static let surfaceRaised = Color.white.opacity(0.065)
 
-    static let text = Color(red: 242/255, green: 228/255, blue: 225/255)
-    static let secondaryText = Color(red: 201/255, green: 164/255, blue: 157/255)
+    static let text = Color(red: 245/255, green: 243/255, blue: 248/255)
+    static let secondaryText = Color(red: 176/255, green: 170/255, blue: 184/255)
 
-    static let positive = Color(red: 111/255, green: 199/255, blue: 152/255)
-    static let caution = Color(red: 232/255, green: 168/255, blue: 79/255)
-    static let negative = Color(red: 255/255, green: 108/255, blue: 86/255)
+    static let positive = Color(red: 104/255, green: 214/255, blue: 158/255)
+    static let caution = Color(red: 242/255, green: 184/255, blue: 84/255)
+    static let negative = Color(red: 255/255, green: 102/255, blue: 92/255)
 }
 
 /// The signature identity shared by the modern window and its controls.

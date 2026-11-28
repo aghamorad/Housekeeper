@@ -1,3 +1,15 @@
+## 2026-11-28 — Housekeeper 0.38.0 (76): True Floating Liquid Glass Main Shell, Modernized Obsidian-Glass Menu Bar Popover & Clean Up Polish
+
+**What changed (after catching live visual defects in 0.37.1):**
+1. **True Floating `22pt` Liquid Glass Main Shell (`HousekeepingApp.swift`, `UI/ContentView.swift`, `UI/OverviewView.swift`):**
+   - Switched `WindowGroup` from `.windowStyle(.titleBar)` to `.windowStyle(.hiddenTitleBar)` so the opaque grey 2018 titlebar strip is completely gone.
+   - Removed the duplicate `.housekeepingSurface(style)` on `sheetBody(workspace)` and duplicate `.background { HousekeepingBackdrop }` on `OverviewView`, which had been painting an opaque vertical seam at `x=236` right over the floating sidebar gap.
+   - Wrapped the right workspace inside a matching floating `22pt` rounded glass stage card (`padding(.top/trailing/bottom, 12)`) beside the floating `22pt` Liquid Glass sidebar (`padding(.top, 38)` cleanly below the traffic lights) with luminous hairline edges and negative space between them.
+2. **Modernized Menu Bar Popover (`UI/RetroStyles.swift` `HousekeepingInk`, `MenuBar/MenuBarPanel.swift`):**
+   - Replaced flat dark-maroon retro surfaces (`rgb(40,7,5)` / `rgb(58,12,9)`) and monospace labels with frosted obsidian-glass surfaces (`Color.white.opacity(0.065)` over `.popover` vibrancy), crisp SF Rounded typography, `16pt` continuous glass `VitalsCard`s, `14pt` glass `DoorButton` tiles, `13pt` consumer rows, and `Capsule()` badges/pills (`TOP MEMORY` / `All (N)` / `Memory | Processor` / temp pill — fixing the truncated `APPS USING MEMO…`).
+3. **Clean Up UI Polish (`UI/CleanerView.swift`):**
+   - Fixed the clipped/overlapping `Arrange by:` segmented control, upgraded search bar / `Smart Select Safe Junk` / `Scan Info` / `Inspect…` / `Reveal` controls from sharp `4–8pt` boxes to sleek `Capsule()` pills.
+
 ## 2026-11-28 — Housekeeper 0.37.1 (75): Terminal Health False-Positive Fix (`npm`/`npx` Chained Symlinks) & First-Class Apple Silicon `oMLX` Detection
 
 **What changed:**

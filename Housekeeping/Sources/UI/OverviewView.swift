@@ -106,7 +106,6 @@ struct OverviewView: View {
             .padding(26)
             .frame(maxWidth: .infinity, alignment: .top)
         }
-        .background { HousekeepingBackdrop(style: style) }
     }
 
     // MARK: - Header

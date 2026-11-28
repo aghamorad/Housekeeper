@@ -175,25 +175,25 @@ struct CleanerView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(style.border, lineWidth: 1))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(style.rowBackground, in: Capsule())
+                .overlay(Capsule().stroke(style.border, lineWidth: 0.8))
 
                 if model.phase == .ready && (model.count(in: .everydayJunk) > 0 || model.count(in: .orphans) > 0) {
                     let safeTotal = model.total(in: .everydayJunk) + model.total(in: .orphans)
                     Button {
                         model.selectSafeCaches()
                     } label: {
-                        HStack(spacing: 5) {
+                        HStack(spacing: 6) {
                             Image(systemName: "sparkles")
                             Text("Smart Select Safe Junk (\(safeTotal.sizeDescription))")
                         }
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 6)
-                        .background(style.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(style.accent.opacity(0.35), lineWidth: 1))
+                        .font(.system(size: 12, weight: .semibold))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(style.accent.opacity(0.16), in: Capsule())
+                        .overlay(Capsule().stroke(style.accent.opacity(0.42), lineWidth: 0.9))
                         .foregroundStyle(style.accent)
                     }
                     .buttonStyle(.plain)
@@ -203,21 +203,22 @@ struct CleanerView: View {
                 Button {
                     showScanDetails.toggle()
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 5) {
                         Image(systemName: showScanDetails ? "chevron.up.circle" : "info.circle")
                         Text(showScanDetails ? "Hide Info" : "Scan Info")
                     }
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 6)
-                    .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(style.border, lineWidth: 1))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(style.rowBackground, in: Capsule())
+                    .overlay(Capsule().stroke(style.border, lineWidth: 0.8))
                 }
                 .buttonStyle(.plain)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Text("Arrange by:")
                     .foregroundColor(style.secondaryText)
+                    .fixedSize()
                 Picker("Sort", selection: $model.order) {
                     ForEach(FileOrder.allCases) { order in
                         Text(order.shortLabel).tag(order).help(order.rawValue)
@@ -225,7 +226,7 @@ struct CleanerView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(maxWidth: 360)
+                .frame(maxWidth: 440)
                 Spacer()
             }
         }
@@ -451,14 +452,24 @@ struct CleanerView: View {
                         .foregroundColor(style.secondaryText)
                         .monospacedDigit()
                 }
-                HStack {
+                HStack(spacing: 6) {
                     if let date = candidate.modified {
                         Text("Modified " + date.formatted(date: .abbreviated, time: .omitted))
                             .font(style.smallFont).foregroundColor(style.secondaryText)
                     }
                     Spacer()
                     Button("Inspect…") { inspectedCandidate = candidate }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.07), in: Capsule())
+                        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.6))
                     Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([candidate.url]) }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.07), in: Capsule())
+                        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.6))
                 }.font(style.smallFont)
                 Text(candidate.detail)
                     .font(style.smallFont)

@@ -63,7 +63,6 @@ struct ContentView: View {
         .environment(\.uiStyle, style)
         .environment(\.mediaDockSkin, MediaDockSkin.resolve(style))
         .environmentObject(appState)
-        .housekeepingSurface(style)
     }
 
     /// MediaDock 9's own window, laid into a sheet. It wears the house's
@@ -511,15 +510,35 @@ struct ScreenChrome<Content: View>: View {
                     credit
                 }
             } else {
-                // Liquid Glass puts navigation along the left rail and a clean,
-                // responsive Back/Forward/Quick-Jump toolbar at the top so moving
-                // between workspaces feels effortless.
-                HStack(spacing: 0) {
+                // True macOS 26/27 Liquid Glass shell: floating 22pt glass sidebar
+                // beside a matching floating 22pt rounded workspace stage — zero
+                // harsh full-height split seams.
+                HStack(spacing: 12) {
                     JobBar()
                     VStack(spacing: 0) {
                         modernTopBar
                         screen
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background {
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .fill(Color.white.opacity(0.032))
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.16), Color.white.opacity(0.05)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                lineWidth: 0.75
+                            )
+                    }
+                    .padding(.top, 12)
+                    .padding(.trailing, 12)
+                    .padding(.bottom, 12)
                 }
                 .ignoresSafeArea(.container, edges: .top)
             }
@@ -642,8 +661,14 @@ struct ScreenChrome<Content: View>: View {
             }
         }
         .padding(.horizontal, 18)
-        .padding(.top, 34)
+        .padding(.top, 14)
         .padding(.bottom, 10)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.white.opacity(0.06))
+                .frame(height: 0.75)
+                .padding(.horizontal, 18)
+        }
     }
 
     private var screen: some View {
@@ -856,7 +881,7 @@ private struct JobBar: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 14).padding(.top, 34).padding(.bottom, 12)
+            .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 10)
             .contentShape(Rectangle())
             .onTapGesture {
                 HousekeepingFeedback.press()
@@ -1014,11 +1039,27 @@ private struct JobBar: View {
             }.font(.system(size: 10)).foregroundStyle(.tertiary)
                 .padding(.horizontal, 18).padding(.bottom, 12)
         }
+        .background {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+        }
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .liquidGlassChrome(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .padding(.leading, 10)
-        .padding(.vertical, 10)
-        .padding(.trailing, 4)
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.20), Color.white.opacity(0.05)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 0.75
+                )
+        }
+        .shadow(color: .black.opacity(0.26), radius: 14, x: 0, y: 6)
+        .padding(.leading, 12)
+        .padding(.top, 38)
+        .padding(.bottom, 12)
     }
 
     private var allJobs: [Job] { hardwareJobs + readingJobs + holdingJobs + appJobs + routeJobs + deviceJobs }

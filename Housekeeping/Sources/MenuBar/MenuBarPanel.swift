@@ -288,12 +288,14 @@ struct MenuBarPanel: View {
                     Image(systemName: "thermometer.medium")
                         .font(.system(size: 10))
                     Text("\(Int(temp.rounded()))°C")
-                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
                 }
                 .foregroundStyle(temp > 75 ? HousekeepingInk.negative : HousekeepingInk.secondaryText)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2.5)
-                .background(HousekeepingInk.surfaceRaised, in: RoundedRectangle(cornerRadius: 4))
+                .padding(.horizontal, 9)
+                .padding(.vertical, 3.5)
+                .background(HousekeepingInk.surfaceRaised, in: Capsule())
+                .overlay(Capsule().strokeBorder(HousekeepingInk.hairline, lineWidth: 0.6))
             }
         }
         .padding(.horizontal, 16)
@@ -585,8 +587,8 @@ struct MenuBarPanel: View {
         let processes = selectedConsumerTab == .cpu ? snapshot.processes : snapshot.memoryHogs
 
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center) {
-                sectionLabel(selectedConsumerTab == .cpu ? "APPS USING PROCESSOR" : "APPS USING MEMORY")
+            HStack(alignment: .center, spacing: 6) {
+                sectionLabel(selectedConsumerTab == .cpu ? "TOP CPU" : "TOP MEMORY")
                 Spacer()
 
                 if !processes.isEmpty {
@@ -596,41 +598,43 @@ struct MenuBarPanel: View {
                         }
                     } label: {
                         HStack(spacing: 3) {
-                            Text(isTopConsumersExpanded ? "Compact" : "Expand (\(processes.count))")
-                                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                            Text(isTopConsumersExpanded ? "Less" : "All (\(processes.count))")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
                             Image(systemName: isTopConsumersExpanded ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 8, weight: .bold))
                         }
                         .foregroundStyle(HousekeepingInk.redLifted)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2.5)
-                        .background(HousekeepingInk.redLifted.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 3.5)
+                        .background(HousekeepingInk.redLifted.opacity(0.14), in: Capsule())
                     }
                     .buttonStyle(.plain)
                     .focusable(false)
                     .help(isTopConsumersExpanded ? "Show compact list" : "Expand to view all active processes")
                 }
 
-                HStack(spacing: 4) {
+                HStack(spacing: 2) {
                     ForEach(ConsumerTab.allCases, id: \.self) { tab in
                         Button {
                             selectedConsumerTab = tab
                         } label: {
                             Text(tab.rawValue)
-                                .font(.system(size: 10, weight: selectedConsumerTab == tab ? .bold : .medium, design: .monospaced))
-                                .foregroundStyle(selectedConsumerTab == tab ? HousekeepingInk.text : HousekeepingInk.secondaryText.opacity(0.75))
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
+                                .font(.system(size: 10.5, weight: selectedConsumerTab == tab ? .semibold : .medium, design: .rounded))
+                                .foregroundStyle(selectedConsumerTab == tab ? HousekeepingInk.text : HousekeepingInk.secondaryText.opacity(0.8))
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 3.5)
                                 .background(
                                     selectedConsumerTab == tab
-                                        ? RoundedRectangle(cornerRadius: 5).fill(HousekeepingInk.surfaceRaised)
-                                        : RoundedRectangle(cornerRadius: 5).fill(Color.clear)
+                                        ? Capsule().fill(HousekeepingInk.surfaceRaised)
+                                        : Capsule().fill(Color.clear)
                                 )
                         }
                         .buttonStyle(.plain)
                         .focusable(false)
                     }
                 }
+                .padding(2)
+                .background(Color.white.opacity(0.04), in: Capsule())
             }
 
             if processes.isEmpty {
@@ -690,7 +694,7 @@ struct MenuBarPanel: View {
             Spacer(minLength: 4)
 
             Text(value)
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(HousekeepingInk.secondaryText)
                 .monospacedDigit()
 
@@ -717,11 +721,15 @@ struct MenuBarPanel: View {
             .buttonStyle(.plain)
             .focusable(false)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(HousekeepingInk.surfaceRaised.opacity(0.65))
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(HousekeepingInk.surfaceRaised.opacity(0.85))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(HousekeepingInk.hairline.opacity(0.65), lineWidth: 0.6)
         )
         .contextMenu {
             Button {
@@ -1628,14 +1636,14 @@ struct MenuBarPanel: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-            .tracking(1.2)
-            .foregroundStyle(HousekeepingInk.secondaryText.opacity(0.85))
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .tracking(0.6)
+            .foregroundStyle(HousekeepingInk.secondaryText.opacity(0.9))
     }
 
     private func reading(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 21, weight: .bold, design: .monospaced))
+            .font(.system(size: 22, weight: .bold, design: .rounded))
             .foregroundStyle(HousekeepingInk.text)
             .monospacedDigit()
             .lineLimit(1)
@@ -1643,16 +1651,16 @@ struct MenuBarPanel: View {
 
     private var hairline: some View {
         Rectangle()
-            .fill(HousekeepingInk.hairline)
-            .frame(height: 1)
+            .fill(HousekeepingInk.hairline.opacity(0.75))
+            .frame(height: 0.75)
     }
 
     private var credit: some View {
         Text("Made by Morad · Housekeeper \(version) · \(HardwareProfile.kind)")
-            .font(.system(size: 9.5, design: .monospaced))
-            .foregroundStyle(HousekeepingInk.secondaryText.opacity(0.55))
+            .font(.system(size: 10, weight: .medium, design: .rounded))
+            .foregroundStyle(HousekeepingInk.secondaryText.opacity(0.62))
             .frame(maxWidth: .infinity)
-            .padding(.bottom, 8)
+            .padding(.bottom, 10)
     }
 
     private var version: String {
@@ -1683,20 +1691,27 @@ struct VitalsCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-                .tracking(1.1)
+                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .tracking(0.6)
                 .foregroundStyle(HousekeepingInk.secondaryText)
             content
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 90, alignment: .topLeading)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(HousekeepingInk.surfaceRaised)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(HousekeepingInk.hairline, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.18), Color.white.opacity(0.05)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 0.75
+                )
         )
     }
 }
@@ -1716,29 +1731,32 @@ struct DoorButton: View {
         } label: {
             VStack(spacing: 5) {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 14.5, weight: .semibold))
                     .symbolRenderingMode(.monochrome)
-                    .frame(width: 20, height: 18, alignment: .center)
+                    .frame(width: 22, height: 18, alignment: .center)
                     .foregroundStyle(isHovered ? HousekeepingInk.redLifted : HousekeepingInk.text)
                     .scaleEffect(isHovered && !reduceMotion ? 1.09 : 1.0)
                 Text(title)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                     .foregroundStyle(HousekeepingInk.text)
             }
-            .frame(maxWidth: .infinity, minHeight: 48)
+            .frame(maxWidth: .infinity, minHeight: 50)
             .padding(.horizontal, 4)
             .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isHovered ? HousekeepingInk.red.opacity(0.18) : HousekeepingInk.surfaceRaised)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isHovered ? HousekeepingInk.red.opacity(0.24) : HousekeepingInk.surfaceRaised)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(isHovered ? HousekeepingInk.redLifted.opacity(0.55) : HousekeepingInk.hairline, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(
+                        isHovered ? HousekeepingInk.redLifted.opacity(0.6) : HousekeepingInk.hairline,
+                        lineWidth: 0.75
+                    )
             )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .animation(HousekeepingMotion.hover, value: isHovered)
         }
         .buttonStyle(DoorPressableStyle())
