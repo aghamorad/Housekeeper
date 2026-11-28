@@ -421,7 +421,7 @@ final class RoutesModel: ObservableObject {
 
         for row in rows {
             let pins: [(VPNLocation, String)] = granularity == .city
-                ? [(row.representative, row.representative.cityConnectID)]
+                ? [(row.representative, active.kind == .surfshark ? row.representative.connectID : row.representative.cityConnectID)]
                 : row.members.map { ($0, $0.connectID) }
 
             for (location, identifier) in pins {
@@ -454,6 +454,9 @@ final class RoutesModel: ObservableObject {
 
     /// Rough wall-clock estimate: connect plus probes plus teardown per route.
     var estimatedSeconds: Double {
+        if providerKind == .surfshark {
+            return Double(targets.count) * 2.2
+        }
         let perRoute = min(options.connectTimeout, 12) * 0.75
             + options.settleSeconds
             + Double(options.pingCount) * 0.45
@@ -548,9 +551,16 @@ final class RoutesModel: ObservableObject {
         isRefreshing = true
         Task {
             defer { isRefreshing = false }
-            locations = await SurfsharkProvider().loadLocations()
-            banner = "Server list refreshed: \(locations.count) servers."
-            prepareSimpleMode()
+            do {
+                let count = try await SurfsharkProvider.refreshLocations()
+                locations = await SurfsharkProvider().loadLocations()
+                banner = "Surfshark server list refreshed: \(count) servers."
+                prepareSimpleMode()
+            } catch {
+                locations = await SurfsharkProvider().loadLocations()
+                banner = "Loaded \(locations.count) Surfshark servers from local list."
+                prepareSimpleMode()
+            }
         }
     }
 

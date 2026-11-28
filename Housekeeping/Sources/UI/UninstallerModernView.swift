@@ -257,9 +257,11 @@ final class UninstallerModel: ObservableObject {
         }
     }
 
+    var usesQuarantine: Bool { CleanupModeSettings.isQuarantineModeEnabled }
+
     /// One press, one app: moves the app (plus its matched leftovers when
-    /// `includeLeftoversByDefault` is on) straight to macOS Trash — no
-    /// Quarantine detour and no extra confirmation hoops.
+    /// `includeLeftoversByDefault` is on) straight to macOS Trash — or to
+    /// Quarantine only if the user turned on Quarantine Mode.
     func uninstallImmediately(_ app: InstalledApp) {
         guard !isWorking, !isScanning, !app.isRunning else { return }
         selectedAppURLs = [app.url]
@@ -271,6 +273,50 @@ final class UninstallerModel: ObservableObject {
         }
         prepareUninstall()
         executeUninstall()
+    }
+
+    /// Quits a running app gracefully, waits up to 4 seconds for it to exit,
+    /// and then uninstalls it automatically in one smooth flow.
+    func quitAndUninstall(_ app: InstalledApp) {
+        guard !isWorking, !isScanning else { return }
+        let running = NSWorkspace.shared.runningApplications.filter {
+            $0.bundleURL?.standardizedFileURL == app.url.standardizedFileURL
+                || (app.bundleIdentifier != nil && $0.bundleIdentifier == app.bundleIdentifier)
+        }
+        guard !running.isEmpty else {
+            uninstallImmediately(app)
+            return
+        }
+        for proc in running { _ = proc.terminate() }
+        outcome = "Closing \(app.name)…"
+        failures = []
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let deadline = Date().addingTimeInterval(4.0)
+            while Date() < deadline {
+                let stillRunning = NSWorkspace.shared.runningApplications.contains {
+                    !$0.isTerminated && (
+                        $0.bundleURL?.standardizedFileURL == app.url.standardizedFileURL
+                        || (app.bundleIdentifier != nil && $0.bundleIdentifier == app.bundleIdentifier)
+                    )
+                }
+                if !stillRunning { break }
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+            let stillOpen = NSWorkspace.shared.runningApplications.contains {
+                !$0.isTerminated && (
+                    $0.bundleURL?.standardizedFileURL == app.url.standardizedFileURL
+                    || (app.bundleIdentifier != nil && $0.bundleIdentifier == app.bundleIdentifier)
+                )
+            }
+            if stillOpen {
+                self.outcome = nil
+                self.failures = ["\(app.name) is still open (it may have unsaved work). Quit it first, then click Uninstall."]
+            } else {
+                self.uninstallImmediately(app)
+            }
+        }
     }
 
     func prepareUninstall() {
@@ -323,6 +369,7 @@ final class UninstallerModel: ObservableObject {
 
     func executeUninstall() {
         guard !isWorking, let planned = pendingUninstallPlan else { return }
+        let quarantineEnabled = usesQuarantine
         let targets = Uninstaller.unambiguousLeftovers(in: planned.map { app in
             var copy = app
             copy.leftovers = includedLeftovers(app)
@@ -334,11 +381,43 @@ final class UninstallerModel: ObservableObject {
         outcome = nil
         let skipped = failures
         Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            if quarantineEnabled {
+                let engine = CleanupEngine()
+                self.session = UninstallSession(apps: targets)
+                do {
+                    let result = try await engine.uninstall(targets) { [weak self] event in
+                        await self?.receiveProgress(event)
+                    }
+                    self.session?.finish(result: result)
+                    let movedSet = Set(result.movedPaths)
+                    let appCount = targets.filter { movedSet.contains($0.url.path) }.count
+                    let relatedCount = targets.flatMap(\.leftovers).filter { movedSet.contains($0.url.path) }.count
+                    if appCount > 0 {
+                        let leftoverNote = relatedCount > 0
+                            ? " and \(relatedCount) leftover item\(relatedCount == 1 ? "" : "s")"
+                            : ""
+                        self.outcome = "Moved \(appCount) app\(appCount == 1 ? "" : "s")\(leftoverNote) to Quarantine."
+                    }
+                    let failedMoves = result.moves.filter { !$0.succeeded }.map { "\($0.path) — \($0.message ?? "could not be moved")" }
+                    self.failures = skipped + failedMoves
+                    self.selectedAppURLs.subtract(targets.filter { movedSet.contains($0.url.path) }.map(\.url))
+                    self.apps.removeAll { movedSet.contains($0.url.path) }
+                } catch {
+                    self.session?.finish(error: error.localizedDescription)
+                    self.failures = skipped + [error.localizedDescription]
+                }
+                self.isWorking = false
+                MotionBudget.shared.release("uninstaller-work")
+                self.startScan()
+                return
+            }
+
             let outcomeResult = await Task.detached(priority: .userInitiated) {
                 Self.moveAppsDirectlyToTrash(targets)
             }.value
 
-            guard let self else { return }
             let movedIDs = outcomeResult.movedIDs
             let appCount = targets.filter { movedIDs.contains($0.id) }.count
             let relatedCount = targets.flatMap(\.leftovers).filter { movedIDs.contains($0.id) }.count
@@ -494,22 +573,23 @@ struct UninstallerModernView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
-                    Image(systemName: "xmark.app.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(style.accent)
-                    Text("App Uninstaller")
-                        .font(style.isRetro ? style.titleFont : .system(size: 28, weight: .bold))
-                }
-                Text("Remove an app with a recoverable Quarantine move. Related settings and personal data stay put unless you choose them in the final review.")
-                    .font(.system(size: 14))
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Uninstall Apps")
+                    .font(style.isRetro ? style.titleFont : .system(size: 26, weight: .semibold, design: .rounded))
+                Text(model.usesQuarantine
+                     ? "Click Uninstall to move an app and its leftovers to Quarantine."
+                     : "Click Uninstall and it goes straight to macOS Trash — along with its leftovers.")
+                    .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            Text("\(model.filteredApps.count) apps")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
             ThemeButton(
-                title: "Refresh Apps",
+                title: "Refresh",
                 systemImage: "arrow.clockwise",
                 isEnabled: !model.isScanning
             ) {
@@ -521,13 +601,16 @@ struct UninstallerModernView: View {
     // MARK: - Search & Action Bar
 
     private var searchAndActionBar: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
+            // Single sleek control bar — no 3-row toolbar clutter.
+            HStack(spacing: 10) {
+                HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
-                    TextField("Search installed applications…", text: $model.searchQuery)
+                    TextField("Search apps…", text: $model.searchQuery)
                         .textFieldStyle(.plain)
+                        .font(.system(size: 13))
                     if !model.searchQuery.isEmpty {
                         Button {
                             model.searchQuery = ""
@@ -539,180 +622,84 @@ struct UninstallerModernView: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(style.border, lineWidth: 1))
-                .frame(maxWidth: 320)
+                .padding(.vertical, 7)
+                .background(style.rowBackground, in: Capsule())
+                .overlay(Capsule().stroke(style.border, lineWidth: 0.75))
+                .frame(maxWidth: 260)
 
-                // Organize by picker
+                Picker("Filter", selection: $model.filterOption) {
+                    Text("All (\(model.apps.count))").tag(UninstallerModel.AppFilterOption.all)
+                    Text("With Leftovers (\(model.appsWithLeftoversCount))").tag(UninstallerModel.AppFilterOption.withLeftovers)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 240)
+
                 Menu {
-                    Picker("Organize by", selection: $model.sortOption) {
+                    Picker("Sort by", selection: $model.sortOption) {
                         ForEach(AppSortOption.allCases) { opt in
                             Label(opt.rawValue, systemImage: opt.systemImage)
                                 .tag(opt)
                         }
                     }
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: model.sortOption.systemImage)
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(style.accent)
                         Text(model.sortOption.rawValue)
                             .font(.system(size: 12, weight: .medium))
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
                     }
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 11)
                     .padding(.vertical, 7)
-                    .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(style.border, lineWidth: 1))
+                    .background(style.rowBackground, in: Capsule())
+                    .overlay(Capsule().stroke(style.border, lineWidth: 0.75))
                 }
                 .menuStyle(.borderlessButton)
 
-                Spacer()
+                Spacer(minLength: 4)
 
                 Toggle("Include leftovers", isOn: $model.includeLeftoversByDefault)
-                    .toggleStyle(.checkbox)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
                     .font(.system(size: 12, weight: .medium))
-                    .help("When checked, clicking Uninstall removes the app and its matched ~/Library leftovers straight to macOS Trash — no Quarantine hoops.")
+                    .help("Remove matched ~/Library caches and support files together with the app.")
+            }
 
-                if !model.selectedAppURLs.isEmpty {
-                    Text("\(model.selectedAppURLs.count) selected (\(ByteCountFormatter.string(fromByteCount: model.selectedTotalSize, countStyle: .file)))")
+            // Contextual bulk bar — appears only when apps are ticked.
+            if !model.selectedAppURLs.isEmpty {
+                HStack(spacing: 12) {
+                    Text("\(model.selectedAppURLs.count) selected · \(ByteCountFormatter.string(fromByteCount: model.selectedTotalSize, countStyle: .file))")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(style.accent)
+                        .foregroundStyle(style.text)
+                        .monospacedDigit()
+                    Spacer()
+                    Button("Clear") {
+                        model.deselectAll()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
 
                     ThemeButton(
-                        title: "Uninstall Selected",
+                        title: "Uninstall \(model.selectedAppURLs.count) Selected",
                         systemImage: "trash.fill",
-                        isPrimary: true
+                        isDestructive: true
                     ) {
                         model.prepareUninstall()
                     }
                 }
-            }
-
-            // Filter Tabs & Global Leftovers Expansion Toggle
-            HStack(spacing: 8) {
-                filterPill(.all, title: "All Apps (\(model.apps.count))", icon: "square.grid.2x2")
-                filterPill(.withLeftovers, title: "With Leftovers (\(model.appsWithLeftoversCount))", icon: "folder.badge.gearshape")
-                filterPill(.cleanOnly, title: "Clean Bundles (\(model.cleanAppsCount))", icon: "checkmark.shield")
-
-                Spacer()
-
-                if model.appsWithLeftoversCount > 0 {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            if model.allExpanded {
-                                model.collapseAll()
-                            } else {
-                                model.expandAll()
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: model.allExpanded ? "chevron.up.circle.fill" : "chevron.down.circle")
-                            Text(model.allExpanded ? "Collapse All Leftovers" : "Expand All Leftovers (\(model.appsWithLeftoversCount))")
-                        }
-                        .font(.system(size: 11, weight: .semibold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(style.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
-                        .overlay(RoundedRectangle(cornerRadius: 7).stroke(style.accent.opacity(0.3), lineWidth: 1))
-                        .foregroundStyle(style.accent)
-                    }
-                    .buttonStyle(.plain)
-                    .help(model.allExpanded ? "Collapse all open leftover inspectors" : "Open leftover drawers for all applications with leftovers")
-                }
-            }
-
-            // Quick select all / deselect all
-            HStack(spacing: 8) {
-                if model.appsWithLeftoversCount > 0 {
-                    Button {
-                        model.selectAppsWithLeftovers()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "sparkles")
-                            Text("Smart Select Leftovers (\(model.appsWithLeftoversCount))")
-                        }
-                        .font(.system(size: 11, weight: .semibold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(style.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
-                        .overlay(RoundedRectangle(cornerRadius: 7).stroke(style.accent.opacity(0.35), lineWidth: 1))
-                        .foregroundStyle(style.accent)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Select all apps with leftover files in ~/Library and prepare them for clean removal")
-                }
-
-                Button {
-                    model.selectAllFiltered()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.circle")
-                        Text("Select All in View")
-                    }
-                    .font(.system(size: 11, weight: .semibold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(style.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
-                    .foregroundStyle(style.accent)
-                }
-                .buttonStyle(.plain)
-
-                if !model.selectedAppURLs.isEmpty {
-                    Button {
-                        model.deselectAll()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "circle")
-                            Text("Deselect All")
-                        }
-                        .font(.system(size: 11, weight: .medium))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
-                        .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Spacer()
-
-                Text("\(model.filteredApps.count) applications")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .housekeepingCard(cornerRadius: 12, highlighted: true)
             }
         }
-    }
-
-    private func filterPill(_ option: UninstallerModel.AppFilterOption, title: String, icon: String) -> some View {
-        let isSelected = model.filterOption == option
-        return Button {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                model.filterOption = option
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: icon)
-                    .font(.system(size: 10))
-                Text(title)
-                    .font(.system(size: 11, weight: isSelected ? .bold : .medium))
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(isSelected ? style.accent.opacity(0.2) : style.rowBackground, in: RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).stroke(isSelected ? style.accent : style.border, lineWidth: 1))
-            .foregroundStyle(isSelected ? style.accent : .secondary)
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Apps List
 
     private var appsList: some View {
-        LazyVStack(spacing: 10) {
+        LazyVStack(spacing: 8) {
             ForEach(model.filteredApps) { app in
                 appRow(app)
             }
@@ -724,124 +711,84 @@ struct UninstallerModernView: View {
         let isExpanded = model.expandedAppURLs.contains(app.url)
 
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 14) {
+            HStack(spacing: 12) {
                 Toggle("", isOn: Binding(
                     get: { isSelected },
                     set: { _ in model.toggleSelection(app) }
                 ))
                 .labelsHidden()
+                .toggleStyle(.checkbox)
 
                 Image(nsImage: NSWorkspace.shared.icon(forFile: app.url.path))
                     .resizable()
-                    .frame(width: 38, height: 38)
+                    .frame(width: 36, height: 36)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 7) {
                         Text(app.name)
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 14, weight: .semibold))
+                            .lineLimit(1)
                         if let v = app.version {
                             Text("v\(v)")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }
-                    }
-                    HStack(spacing: 10) {
-                        if let mod = app.modifiedDate {
-                            Label(mod.formatted(date: .abbreviated, time: .omitted), systemImage: "clock")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                        } else if let created = app.createdDate {
-                            Label(created.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
+                        if app.isRunning {
+                            Text("Open")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(style.caution)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1.5)
+                                .background(style.caution.opacity(0.14), in: Capsule())
                         }
-                        Text(app.url.path)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
                     }
-                }
 
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text(ByteCountFormatter.string(fromByteCount: app.totalSize, countStyle: .file))
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
                     if !app.leftovers.isEmpty {
                         Button {
-                            withAnimation(.easeInOut(duration: 0.18)) {
+                            withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
                                 model.toggleExpand(app)
                             }
                         } label: {
                             HStack(spacing: 4) {
-                                Image(systemName: isExpanded ? "eye.slash.fill" : "eye.fill")
-                                    .font(.system(size: 9))
-                                Text(isExpanded ? "Hide leftovers" : "See \(app.leftovers.count) leftovers")
-                                    .font(.system(size: 11, weight: .semibold))
+                                Text("\(app.leftovers.count) leftover\(app.leftovers.count == 1 ? "" : "s") · \(ByteCountFormatter.string(fromByteCount: app.leftoverSize, countStyle: .file))")
+                                    .font(.system(size: 11.5, weight: .medium))
                                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                    .font(.system(size: 8, weight: .bold))
+                                    .font(.system(size: 8.5, weight: .bold))
                             }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(
-                                isExpanded ? style.accent.opacity(0.22) : style.accent.opacity(0.12),
-                                in: Capsule()
-                            )
-                            .overlay(Capsule().stroke(style.accent.opacity(0.35), lineWidth: 1))
                             .foregroundStyle(style.accent)
                         }
                         .buttonStyle(.plain)
-                        .help(isExpanded ? "Hide leftover files" : "Click to inspect all \(app.leftovers.count) leftover items")
+                        .help("Show or hide matched ~/Library files for \(app.name)")
                     } else {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary.opacity(0.7))
-                            Text("Clean bundle")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
+                        Text("No leftover files")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
                     }
                 }
 
-                Button {
+                Spacer(minLength: 8)
+
+                Text(ByteCountFormatter.string(fromByteCount: app.totalSize, countStyle: .file))
+                    .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(style.text)
+                    .frame(minWidth: 68, alignment: .trailing)
+
+                ThemeButton(
+                    title: app.isRunning ? "Quit & Uninstall" : "Uninstall",
+                    systemImage: app.isRunning ? "stop.circle" : "trash",
+                    isDestructive: !app.isRunning,
+                    isEnabled: !model.isScanning
+                ) {
                     if app.isRunning {
-                        model.requestQuit(app)
+                        model.quitAndUninstall(app)
                     } else {
                         model.uninstallImmediately(app)
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: app.isRunning ? "stop.circle" : "trash")
-                        Text(app.isRunning ? "Quit to Uninstall" : "Uninstall")
-                    }
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.red)
-                    .padding(.horizontal, 9)
-                    .frame(minHeight: 44)
-                    .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
                 }
-                .buttonStyle(.plain)
-                .help(app.isRunning
-                      ? "Ask \(app.name) to quit normally; uninstall becomes available once it closes"
-                      : "Move \(app.name) and its matched related files to Quarantine now. Reversible from Quarantine.")
-                .disabled(model.isScanning)
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        model.toggleExpand(app)
-                    }
-                } label: {
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .padding(8)
-                }
-                .buttonStyle(.plain)
             }
-            .padding(14)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
 
             if isExpanded {
                 Divider().padding(.horizontal, 14)
@@ -852,10 +799,10 @@ struct UninstallerModernView: View {
         .onTapGesture {
             model.applySelectionClick(app, order: model.filteredApps.map(\.url))
         }
-        .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 12))
+        .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isSelected ? style.accent : style.border, lineWidth: isSelected ? 1.5 : 1)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isSelected ? style.accent : style.border, lineWidth: isSelected ? 1.25 : 0.75)
         )
         .contextMenu {
             Button {
@@ -1142,13 +1089,15 @@ struct UninstallerModernView: View {
         let size = targets.reduce(Int64(0)) { $0 + $1.size } + included.reduce(0) { $0 + $1.size }
         return VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 12) {
-                Image(systemName: "checkmark.app")
-                    .font(.system(size: 26))
-                    .foregroundStyle(style.accent)
+                Image(systemName: model.usesQuarantine ? "archivebox.fill" : "trash.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(model.usesQuarantine ? style.accent : style.negative)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Move Apps to macOS Trash")
+                    Text(model.usesQuarantine ? "Move Apps to Quarantine" : "Uninstall Apps to Trash")
                         .font(.system(size: 18, weight: .bold))
-                    Text("The selected apps and ticked leftovers will be moved straight to macOS Trash (no Quarantine detour). You can untick any leftover you want to keep. macOS may ask for your password for apps in /Applications.")
+                    Text(model.usesQuarantine
+                         ? "Selected apps and ticked leftovers move into ~/Housekeeping Quarantine where you can restore them anytime."
+                         : "Selected apps and ticked leftovers go straight to macOS Trash. Untick any leftover you want to keep.")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                 }
@@ -1224,9 +1173,12 @@ struct UninstallerModernView: View {
                 }
                 Spacer()
                 ThemeButton(
-                    title: "Uninstall \(targets.count) App\(targets.count == 1 ? "" : "s")",
-                    systemImage: "trash.fill",
-                    isPrimary: true
+                    title: model.usesQuarantine
+                        ? "Move \(targets.count) App\(targets.count == 1 ? "" : "s") to Quarantine"
+                        : "Uninstall \(targets.count) App\(targets.count == 1 ? "" : "s")",
+                    systemImage: model.usesQuarantine ? "archivebox.fill" : "trash.fill",
+                    isPrimary: model.usesQuarantine,
+                    isDestructive: !model.usesQuarantine
                 ) {
                     model.executeUninstall()
                 }

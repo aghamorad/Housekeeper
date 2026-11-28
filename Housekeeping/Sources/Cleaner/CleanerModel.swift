@@ -353,11 +353,12 @@ final class CleanerModel: ObservableObject {
         }
 
         pendingAction = .uninstall
-        pendingTitle = "Move \(ready.count) application\(ready.count == 1 ? "" : "s") to Quarantine?"
+        let dest = usesQuarantine ? "Quarantine" : "macOS Trash"
+        pendingTitle = "Move \(ready.count) application\(ready.count == 1 ? "" : "s") to \(dest)?"
         let related = CleanCandidate.nonOverlapping(ready.flatMap(\.leftovers).filter { includedRelatedPaths.contains($0.id) && !protection.isProtected($0.url) })
         pendingDetail = related.isEmpty
-            ? "The selected applications move to Quarantine. Their related files and personal data stay where they are unless you tick an exact path in the final review. Everything moved can be put back from Quarantine. macOS may ask for an administrator password."
-            : "The applications and \(related.count) specifically chosen related item\(related.count == 1 ? "" : "s") move together. Related files may contain settings and personal app data. Everything moved can be put back from Quarantine. macOS may ask for an administrator password."
+            ? "The selected applications move to \(dest). macOS may ask for your administrator password for apps in /Applications."
+            : "The applications and \(related.count) related item\(related.count == 1 ? "" : "s") move to \(dest). macOS may ask for your administrator password for apps in /Applications."
         pendingPaths = paths
         pendingSize = ready.reduce(Int64(0)) { $0 + $1.size } + related.reduce(0) { $0 + $1.size }
         pendingAppName = ready.count == 1 ? ready[0].name : nil
@@ -373,7 +374,39 @@ final class CleanerModel: ObservableObject {
         return !rows.isEmpty && rows.allSatisfy(\.isSelected)
     }
 
+    /// True when the user opted into Quarantine Mode; false (default) moves
+    /// cleaned items and uninstalled apps straight to macOS Trash.
+    var usesQuarantine: Bool { CleanupModeSettings.isQuarantineModeEnabled }
+
+    /// True when every currently selected candidate is a safe, locally-rebuilt
+    /// cache/orphan (no re-downloads, large files, or installers), allowing
+    /// 1-click cleaning straight to Trash in Direct Clean mode.
+    var selectionIsInstantSafeClean: Bool {
+        guard !usesQuarantine, !selectedCandidates.isEmpty else { return false }
+        return selectedCandidates.allSatisfy { item in
+            (item.category == .everydayJunk || item.category == .orphans) && !item.rebuild.isDownload
+        }
+    }
+
     // MARK: - Asking
+
+    /// In Direct Clean mode, safe caches clean straight to macOS Trash with one
+    /// click; larger/re-download items or Quarantine mode still show the concise
+    /// review confirmation first.
+    func cleanOrRequestReview() {
+        guard phase == .ready else { return }
+        if selectionIsInstantSafeClean {
+            let protection = ProtectionList()
+            let chosen = CleanCandidate.nonOverlapping(selectedCandidates.filter { !protection.isProtected($0.url) })
+            guard !chosen.isEmpty else { return }
+            phase = .working
+            MotionBudget.shared.hold("cleaner-work")
+            workProgress = UninstallProgress(phase: .preparing, total: chosen.count)
+            perform(paths: chosen.map(\.url.path), title: "Cleaned", noun: "item", intent: .sweep)
+        } else {
+            requestClean()
+        }
+    }
 
     func requestClean() {
         guard phase == .ready else { return }
@@ -384,8 +417,13 @@ final class CleanerModel: ObservableObject {
         let categories = Set(chosen.map(\.category.title)).sorted()
 
         pendingAction = .clean
-        pendingTitle = "Move \(chosen.count) item\(chosen.count == 1 ? "" : "s") to Quarantine?"
-        pendingDetail = "\(size.sizeDescription) from \(categories.joined(separator: ", ")). These items are MOVED, not deleted. No disk space is recovered while they remain in Quarantine; you can restore them there or review permanent deletion separately."
+        if usesQuarantine {
+            pendingTitle = "Move \(chosen.count) item\(chosen.count == 1 ? "" : "s") to Quarantine?"
+            pendingDetail = "\(size.sizeDescription) from \(categories.joined(separator: ", ")). These items are held in ~/Housekeeping Quarantine so you can restore them anytime."
+        } else {
+            pendingTitle = "Clean \(chosen.count) item\(chosen.count == 1 ? "" : "s") to Trash?"
+            pendingDetail = "\(size.sizeDescription) from \(categories.joined(separator: ", ")). Items go straight to macOS Trash — simple and out of your way."
+        }
         pendingPaths = chosen.map(\.url.path)
         pendingSize = size
         pendingAppName = nil
@@ -409,10 +447,11 @@ final class CleanerModel: ObservableObject {
         let size = app.size + related.reduce(0) { $0 + $1.size }
 
         pendingAction = .uninstall
-        pendingTitle = "Move \(app.name) to Quarantine?"
+        let dest = usesQuarantine ? "Quarantine" : "macOS Trash"
+        pendingTitle = "Move \(app.name) to \(dest)?"
         var detail = related.isEmpty
-            ? "The application, \(size.sizeDescription). Its related files and personal data stay where they are unless you tick an exact path in the final review. Everything moved can be put back from Quarantine. macOS may ask for an administrator password."
-            : "The application and \(related.count) specifically chosen related item\(related.count == 1 ? "" : "s"), \(size.sizeDescription) together. Related files may contain settings and personal app data. Everything moved can be put back from Quarantine. macOS may ask for an administrator password."
+            ? "The application (\(size.sizeDescription)) moves to \(dest). macOS may ask for your password for apps in /Applications."
+            : "The application and \(related.count) related item\(related.count == 1 ? "" : "s") (\(size.sizeDescription)) move to \(dest). macOS may ask for your password for apps in /Applications."
         if let version = app.version {
             detail += " Version \(version)."
         }
@@ -468,6 +507,7 @@ final class CleanerModel: ObservableObject {
     // MARK: - Doing
 
     private func perform(paths: [String], title: String, noun: String, intent: CleanupIntent) {
+        let quarantineEnabled = usesQuarantine
         let engine = CleanupEngine()
         // The shelf each item came from, so the Quarantine record says "Cache"
         // or "Orphaned Leftovers" rather than calling every move a "Clean Up".
@@ -477,6 +517,19 @@ final class CleanerModel: ObservableObject {
             categories[candidate.id] = candidate.category.title
         }
         Task { @MainActor [weak self] in
+            if !quarantineEnabled {
+                let reportProgress: @Sendable (UninstallProgress) -> Void = { [weak self] progress in
+                    Task { @MainActor in
+                        self?.receiveCleanupProgress(progress)
+                    }
+                }
+                let outcome = await Task.detached(priority: .userInitiated) {
+                    Self.movePathsDirectlyToTrash(paths: paths, intent: intent, onProgress: reportProgress)
+                }.value
+                self?.absorbDirectTrash(moved: outcome.moved, failed: outcome.failed, title: title, noun: noun)
+                return
+            }
+
             do {
                 let result: RepairMoveResult
                 if intent == .explicitRemoval {
@@ -502,6 +555,88 @@ final class CleanerModel: ObservableObject {
                 self?.finishWith(error: error)
             }
         }
+    }
+
+    private nonisolated static func movePathsDirectlyToTrash(
+        paths: [String],
+        intent: CleanupIntent,
+        onProgress: @escaping @Sendable (UninstallProgress) -> Void
+    ) -> (moved: Set<String>, failed: [String]) {
+        let fm = FileManager.default
+        let protection = ProtectionList()
+        var moved = Set<String>()
+        var failed: [String] = []
+        let total = paths.count
+
+        for (idx, path) in paths.enumerated() {
+            let url = URL(fileURLWithPath: path)
+            onProgress(UninstallProgress(phase: .moving, path: path, completed: idx, total: total))
+
+            if protection.isProtected(url) {
+                failed.append("\(url.lastPathComponent) — on your Leave Alone list")
+                continue
+            }
+            if case .refused(let refusal) = ProtectedDataPolicy.verdict(for: url, intent: intent) {
+                failed.append("\(url.lastPathComponent) — \(refusal)")
+                continue
+            }
+            guard fm.fileExists(atPath: path) else {
+                moved.insert(path)
+                continue
+            }
+
+            do {
+                try fm.trashItem(at: url, resultingItemURL: nil)
+                moved.insert(path)
+            } catch {
+                // Finder fallback prompts macOS password cleanly for root-owned /Applications items.
+                let escaped = path
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "\"", with: "\\\"")
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+                proc.arguments = ["-e", "tell application \"Finder\" to delete (POSIX file \"\(escaped)\" as alias)"]
+                try? proc.run()
+                proc.waitUntilExit()
+                if !fm.fileExists(atPath: path) {
+                    moved.insert(path)
+                } else {
+                    failed.append("\(url.lastPathComponent) — \(error.localizedDescription)")
+                }
+            }
+        }
+        onProgress(UninstallProgress(phase: .finished, path: nil, completed: total, total: total))
+        return (moved, failed)
+    }
+
+    private func absorbDirectTrash(moved: Set<String>, failed: [String], title: String, noun: String) {
+        var sizes: [String: Int64] = [:]
+        for candidate in candidates { sizes[candidate.id] = candidate.size }
+        for app in apps {
+            sizes[app.id] = app.size
+            for item in app.leftovers { sizes[item.id] = item.size }
+        }
+        let movedBytes = moved.reduce(Int64(0)) { $0 + (sizes[$1] ?? 0) }
+        includedRelatedPaths.subtract(moved)
+        candidates.removeAll { moved.contains($0.url.path) }
+        apps = apps.compactMap { app in
+            if moved.contains(app.url.path) { return nil }
+            var copy = app
+            copy.leftovers.removeAll { moved.contains($0.url.path) }
+            copy.isSelected = false
+            return copy
+        }
+        trash = TrashService().read()
+        failures = failed
+
+        var sentence = "\(title): \(moved.count) \(noun)\(moved.count == 1 ? "" : "s") (\(movedBytes.sizeDescription)) moved to Trash."
+        if !failed.isEmpty {
+            sentence += " \(failed.count) could not be moved."
+        }
+        outcome = sentence
+        workProgress = nil
+        MotionBudget.shared.release("cleaner-work")
+        phase = .ready
     }
 
     private func receiveUninstallProgress(_ event: UninstallProgress) {

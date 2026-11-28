@@ -35,11 +35,15 @@ final class LoginItem: NSObject, ObservableObject {
         case .enabled:
             enabled = true
             needsApproval = false
+            // If both SMAppService and a fallback LaunchAgent exist, remove the
+            // legacy LaunchAgent so macOS never shows two background items.
+            removeAgent()
         case .requiresApproval:
             // Registered, but macOS will not act on it until the reader allows it.
             // The box stays ticked; the panel says what is missing.
             enabled = true
             needsApproval = true
+            removeAgent()
         default:
             enabled = agentExists
             needsApproval = false

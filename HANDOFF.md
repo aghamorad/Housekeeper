@@ -1,3 +1,31 @@
+## 2026-11-28 — Housekeeper 0.37.0 (74): Single Background Item, Non-Hanging Surfshark Route Sweep, Direct-Clean Uninstaller/Cleaner & Native macOS 26/27 Liquid Glass Overhaul
+
+**What changed:**
+1. **Single Background Item (`Core/PrivilegedHelper.swift`, `MenuBar/LoginItem.swift`, `UI/OverviewView.swift`, `UI/SettingsView.swift`):**
+   - Root cause of the duplicate "Housekeeper" entry in System Settings → General → Login Items & Extensions (proven via `sfltool dumpbtm`): `/Library/LaunchDaemons/com.housekeeping.helper.plist` lacked `<key>AssociatedBundleIdentifiers</key><array><string>com.housekeeping.app</string></array>`, forcing macOS BTM to display the root helper as a second orphan developer row alongside `/Applications/Housekeeper.app`.
+   - Added `AssociatedBundleIdentifiers` to `PrivilegedHelper.install()`, added `needsAssociationRepair` detection, added a 1-click **"Merge Into One"** / **"Merge Duplicate Background Item"** action on the Dashboard & Settings (uses standard macOS admin prompt once to refresh the root plist), and made `LoginItem.refresh()` auto-prune any legacy fallback `LaunchAgent` when `SMAppService.mainApp` is active.
+2. **Route Sweep & Surfshark Route Sweep Completely Fixed (`Routes/RouteProcess.swift`, `Routes/RouteProviders.swift`, `Routes/RouteEngine.swift`, `Routes/RoutesModel.swift`, `Routes/RoutesView.swift`):**
+   - Fixed `RouteProcess.run` hangs: implemented real thread-safe `ProcessBox` cancellation in `onCancel` (terminates child process in ~0.24s instead of hanging until timeout) and replaced unbounded `group.wait()` with a 0.5s timeout + handle close so inherited pipe FDs from background grandchildren can never deadlock.
+   - Rebuilt `SurfsharkProvider` as a fast, non-destructive direct endpoint probe (`managesSystemTunnel = false`): Surfshark's Mac client exposes no CLI location/protocol switcher and `scutil --nc start` on its PacketTunnel hung indefinitely. Now reads live `/Applications/Surfshark.app/Contents/Resources/clusters.json` (178 clusters) / Surfshark API, resolves cluster hostnames via hard-deadline DNS, measures real non-blocking POSIX TCP handshake latency on ports `1443`/`443` + ICMP ping/jitter/loss, never touches or disconnects the active VPN, and finishes 3 countries in ~3.4s.
+   - Fixed `RouteEngine` to skip tunnel teardown / `forceRestoreInternet()` for direct-probe providers, prevent double-`ensureTunnelDown` races on Stop, and bail out early on consecutive `.unknown` CLI states.
+3. **Simple Direct-Clean Uninstaller & Clean Up + Optional First-Launch Quarantine Mode (`Cleanup/CleanupModels.swift`, `Cleaner/CleanerModel.swift`, `UI/CleanerView.swift`, `UI/UninstallerModernView.swift`, `UI/ContentView.swift`, `UI/SettingsView.swift`):**
+   - Added `CleanupModeSettings` (`housekeeping.quarantineModeEnabled`, default `false` = Direct Clean straight to macOS Trash; `housekeeping.hasChosenCleanupMode`).
+   - Added a calm, one-time first-open **Cleanup Mode Choice Sheet** letting the user pick **Direct Clean (Recommended)** vs **Quarantine Safety Net (Optional)**, also toggleable anytime in Settings → Cleaning & Safety.
+   - Streamlined `UninstallerModernView`: replaced the 3-row toolbar with a single Liquid Glass control bar, decluttered app rows (removed redundant chevron & raw path/date noise), added 1-click **Quit & Uninstall** for open apps, and sends apps + leftovers straight to macOS Trash in Direct Clean mode (while still respecting `ProtectionList`).
+   - Updated `CleanerModel` & `CleanerView`: safe caches clean straight to macOS Trash in 1 click (with `ProtectedDataPolicy` & `ProtectionList` still enforced at the chokepoint), added 1-click **Empty Trash** in the footer, and hides **Quarantine** from the sidebar unless Quarantine Mode is enabled or items remain in `~/Housekeeping Quarantine`.
+4. **Native macOS 26/27 Liquid Glass ("Golden Gate") Overhaul (`UI/RetroStyles.swift`, `UI/ModernChrome.swift`, `UI/ContentView.swift`, `UI/OverviewView.swift`, `MenuBar/MenuBarPanel.swift`, `AppDelegate.swift`, `docs/DESIGN.md`, `docs/PRODUCT.md`):**
+   - Enabled seamless full-size transparent titlebar (`.fullSizeContentView`, `.titlebarAppearsTransparent = true`) so the native `.sidebar` vibrancy flows behind traffic lights.
+   - Built `@available(macOS 26.0, *)` `liquidGlassChrome` & `LiquidGlassGroup` (`GlassEffectContainer` + `.glassEffect(.regular.tint(...).interactive(), in: ...)`) with `.regularMaterial` fallback on macOS 13–15, applied selectively to navigation chrome, floating toolbar capsules, capsule buttons, active sidebar pill, search pill, Quick Jump, and 4 Hero Launch Tiles (never on scrolling list rows — preserving `0.0%` idle CPU and lean RAM).
+   - Updated `MenuBarPanel` with native `.popover` vibrancy + translucent oxblood tint.
+
+**Verified:**
+- `./script/typecheck.sh` (`-warnings-as-errors`, Swift 6.4.2): PASS
+- `./script/test_safety.sh`: 381 assertions PASS
+- `python3 script/test_background_mcp.py`: 85 assertions PASS
+- `python3 script/audit_ui_controls.py`: 0 inert controls across 142 Swift files
+- `scan_ui_slop.py`: 0 BAN / 0 WARN / 0 INFO across 207 files
+- Live non-destructive Surfshark probe verification: 178 clusters loaded, 3 countries (Turkey, UAE, Germany) completed in 3.40s, `RouteProcess` cancellation 0.24s, active VPN untouched.
+
 ## 2026-11-27 — Housekeeper 0.34.0 (71): Cloudflare Clean VPN Studio, Intel Auto-Detection & MediaDock Compatibility, Kitchen-Sink Menu Bar & Debugging
 
 **What went into it:**

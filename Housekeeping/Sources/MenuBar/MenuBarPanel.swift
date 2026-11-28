@@ -122,7 +122,12 @@ struct MenuBarPanel: View {
             credit
         }
         .frame(width: 392)
-        .background(HousekeepingInk.surface)
+        .background {
+            ZStack {
+                NativeVisualEffectView(material: .popover, blendingMode: .behindWindow)
+                HousekeepingInk.surface.opacity(0.76)
+            }
+        }
         // The popover is sized once, from the view it was built with. A detail
         // page is taller than the overview, so the page reports its own height
         // and the status item resizes the popover to it.

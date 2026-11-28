@@ -87,18 +87,30 @@ final class RouteEngine: ObservableObject {
     }
 
     func stop() {
+        let provider = activeProvider
+        let managedTunnel = provider?.managesSystemTunnel ?? false
         task?.cancel()
         task = nil
         isRunning = false
         phase = .idle
+        currentTarget = nil
+
+        guard managedTunnel, let provider else {
+            RouteEngine.tunnelMayBeOpen = false
+            activeProvider = nil
+            activity = "Stopped"
+            onFinish?(false)
+            return
+        }
+
         activity = "Closing the tunnel…"
-        let provider = activeProvider
         Task { [weak self] in
             guard let self else { return }
-            if let provider {
-                await self.ensureTunnelDown(provider)
-            }
+            await self.ensureTunnelDown(provider, allowNetworkReset: true)
+            self.activeProvider = nil
+            RouteEngine.tunnelMayBeOpen = false
             self.activity = "Stopped"
+            self.onFinish?(false)
         }
     }
 
@@ -152,30 +164,65 @@ final class RouteEngine: ObservableObject {
     ) async {
         activeProvider = provider
         cleanupMessage = nil
+
+        // Direct endpoint providers (e.g. Surfshark) probe cluster hostnames
+        // directly without touching the OS tunnel or disconnecting an active VPN.
+        if !provider.managesSystemTunnel {
+            RouteEngine.tunnelMayBeOpen = false
+            for (index, target) in targets.enumerated() {
+                if Task.isCancelled { break }
+                currentTarget = target
+                activity = "Checking \(index + 1) of \(targets.count) · \(target.location.city)"
+                phase = .measuring
+
+                if let sample = await provider.probeDirectRoute(
+                    target, options: options, probeHost: probeHost, probeURL: probeURL
+                ) {
+                    if Task.isCancelled { break }
+                    results.append(sample)
+                    completedCount = index + 1
+                }
+
+                if Task.isCancelled { break }
+                if index < targets.count - 1 {
+                    try? await Task.sleep(nanoseconds: 120_000_000)
+                }
+            }
+
+            guard !Task.isCancelled else { return }
+            activity = "Finished"
+            activeProvider = nil
+            finish(completed: true)
+            return
+        }
+
         RouteEngine.tunnelMayBeOpen = true
 
         // Start from a known state; a tunnel left up by an earlier run would
         // make the first connect a no-op and its timing meaningless. If the
-        // tunnel will not close, do not start: measuring routes behind a tunnel
-        // that is already up is how a run ends with no internet.
+        // provider's own tunnel will not close, do not start — and never flush
+        // the whole Mac's network before a sweep has even begun.
         await provider.disconnect()
-        if !(await waitForSettled(provider, target: .disconnected, timeout: 12, options: options)) {
-            await ensureTunnelDown(provider)
-            if await provider.tunnelState() != .disconnected {
-                errorMessage = "A VPN tunnel is still up and would not close, so the test did not start. Press Fix My Internet Now."
-                cleanupMessage = "The tunnel would not close. Nothing was tested."
+        if !(await waitForSettled(provider, target: .disconnected, timeout: 10, options: options)) {
+            if Task.isCancelled { return }
+            let state = await provider.tunnelState()
+            if state != .disconnected {
+                errorMessage = "\(provider.displayName) still reports \(state.rawValue) and did not disconnect cleanly, so the sweep did not start."
+                cleanupMessage = "Nothing was tested. Disconnect \(provider.displayName) manually or press Fix My Internet Now."
                 activeProvider = nil
                 finish(completed: false)
                 return
             }
         }
 
+        var openedTunnel = false
         for (index, target) in targets.enumerated() {
             if Task.isCancelled { break }
 
             currentTarget = target
             activity = "Route \(index + 1) of \(targets.count)"
             phase = .connecting
+            openedTunnel = true
 
             var result = RouteResult(target: target)
             let failure = await sweep(provider: provider, target: target,
@@ -193,17 +240,19 @@ final class RouteEngine: ObservableObject {
             }
         }
 
+        // If `stop()` cancelled this task, `stop()` owns teardown so we never
+        // race two simultaneous `ensureTunnelDown` calls.
+        guard !Task.isCancelled else { return }
+
         // Never leave the machine on a route the user did not pick — and do not
-        // take the provider's word for it. A disconnect that returns without
-        // closing the tunnel is exactly the failure that took the internet away.
+        // take the provider's word for it.
         phase = .disconnecting
         activity = "Closing the tunnel…"
-        await ensureTunnelDown(provider)
+        await ensureTunnelDown(provider, allowNetworkReset: openedTunnel)
 
-        let completed = !Task.isCancelled
-        activity = completed ? "Finished" : "Stopped"
+        activity = "Finished"
         activeProvider = nil
-        finish(completed: completed)
+        finish(completed: true)
     }
 
     private func finish(completed: Bool) {
@@ -214,26 +263,28 @@ final class RouteEngine: ObservableObject {
         onFinish?(completed)
     }
 
-    /// Ask the provider to disconnect, wait for it, and if it is still up, put
-    /// the machine back together through the privileged helper. Failure here is
-    /// reported, never swallowed.
-    private func ensureTunnelDown(_ provider: any VPNProvider) async {
+    /// Ask the provider to disconnect, wait for it, and only if this sweep's
+    /// tunnel refuses to close, restore the network through the helper.
+    private func ensureTunnelDown(_ provider: any VPNProvider, allowNetworkReset: Bool = true) async {
+        guard provider.managesSystemTunnel else { return }
         isCleaningUp = true
         defer { isCleaningUp = false }
 
         await provider.disconnect()
         if await waitForSettled(provider, target: .disconnected,
-                                timeout: 12,
+                                timeout: 10,
                                 options: RouteOptions()) {
             return
         }
 
-        let stillUp = await provider.tunnelState() != .disconnected
-        let report = await VPNTunnelEngine.shared.forceRestoreInternet()
-        cleanupMessage = report.summary
-        if stillUp {
-            cleanupMessage = "The client said it disconnected but a tunnel was still up. " + report.summary
+        let state = await provider.tunnelState()
+        guard state == .connected || state == .connecting || state == .disconnecting else {
+            return
         }
+        guard allowNetworkReset else { return }
+
+        let report = await VPNTunnelEngine.shared.forceRestoreInternet()
+        cleanupMessage = "The client said it disconnected but a tunnel was still up. " + report.summary
     }
 
     /// Returns a failure description, or nil when the route came up.
@@ -324,10 +375,20 @@ final class RouteEngine: ObservableObject {
         options: RouteOptions
     ) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
+        var consecutiveUnknown = 0
         while Date() < deadline {
             if Task.isCancelled { return false }
             let state = await provider.tunnelState()
+            if Task.isCancelled { return false }
             if state == target { return true }
+            if state == .unknown {
+                consecutiveUnknown += 1
+                // Bail out early if the client CLI isn't answering instead of
+                // burning the full 45-second timeout.
+                if consecutiveUnknown >= 6 { return false }
+            } else {
+                consecutiveUnknown = 0
+            }
             // A route that has fallen back to Disconnected will never reach
             // Connected, so stop burning the deadline. Confirmed one poll
             // later, because providers report Disconnected for a beat before

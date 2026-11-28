@@ -74,15 +74,56 @@ enum RouteProcess {
         return env
     }
 
+    private final class ProcessBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var process: Process?
+        private var cancelled = false
+
+        var isCancelled: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return cancelled
+        }
+
+        func attach(_ process: Process) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            if cancelled { return false }
+            self.process = process
+            return true
+        }
+
+        func cancel() {
+            let target: Process?
+            lock.lock()
+            cancelled = true
+            target = process
+            lock.unlock()
+
+            guard let target, target.isRunning else { return }
+            target.terminate()
+            let pid = target.processIdentifier
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.25) {
+                if target.isRunning && pid > 0 {
+                    kill(pid, SIGKILL)
+                }
+            }
+        }
+    }
+
     static func run(
         _ launchPath: String,
         _ arguments: [String] = [],
         timeout: Double = 30,
         environment: [String: String]? = nil
     ) async throws -> RouteProcessOutput {
+        let box = ProcessBox()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 DispatchQueue.global(qos: .userInitiated).async {
+                    if box.isCancelled {
+                        continuation.resume(returning: RouteProcessOutput(stdout: "", stderr: "", exitCode: -15, timedOut: false))
+                        return
+                    }
+
                     let process = Process()
                     process.executableURL = URL(fileURLWithPath: launchPath)
                     process.arguments = arguments
@@ -115,11 +156,18 @@ enum RouteProcess {
                         group.leave()
                     }
 
+                    guard box.attach(process) else {
+                        try? outPipe.fileHandleForReading.close()
+                        try? errPipe.fileHandleForReading.close()
+                        continuation.resume(returning: RouteProcessOutput(stdout: "", stderr: "", exitCode: -15, timedOut: false))
+                        return
+                    }
+
                     do {
                         try process.run()
                     } catch {
-                        outPipe.fileHandleForReading.closeFile()
-                        errPipe.fileHandleForReading.closeFile()
+                        try? outPipe.fileHandleForReading.close()
+                        try? errPipe.fileHandleForReading.close()
                         continuation.resume(throwing: RouteProcessError.launchFailed(error.localizedDescription))
                         return
                     }
@@ -127,18 +175,29 @@ enum RouteProcess {
                     let deadline = Date().addingTimeInterval(timeout)
                     var timedOut = false
                     while process.isRunning {
+                        if box.isCancelled {
+                            process.terminate()
+                            Thread.sleep(forTimeInterval: 0.15)
+                            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+                            break
+                        }
                         if Date() >= deadline {
                             timedOut = true
                             process.terminate()
                             // Give it a moment to die politely, then insist.
-                            Thread.sleep(forTimeInterval: 0.4)
+                            Thread.sleep(forTimeInterval: 0.3)
                             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
                             break
                         }
-                        Thread.sleep(forTimeInterval: 0.05)
+                        Thread.sleep(forTimeInterval: 0.03)
                     }
                     process.waitUntilExit()
-                    group.wait()
+                    // Bounded wait: if a background grandchild inherited stdout/stderr,
+                    // an unbounded group.wait() would hang the entire sweep forever.
+                    if group.wait(timeout: .now() + 0.5) == .timedOut {
+                        try? outPipe.fileHandleForReading.close()
+                        try? errPipe.fileHandleForReading.close()
+                    }
 
                     lock.lock()
                     let out = outData
@@ -155,9 +214,7 @@ enum RouteProcess {
                 }
             }
         } onCancel: {
-            // The polling loop above notices nothing about Task cancellation,
-            // so cancellation is handled by the caller's own deadline; this
-            // exists only so the cancellation handler is well-formed.
+            box.cancel()
         }
     }
 

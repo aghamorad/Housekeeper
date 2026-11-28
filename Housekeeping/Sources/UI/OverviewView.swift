@@ -9,8 +9,11 @@ struct OverviewView: View {
     @Environment(\.uiStyle) private var style
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var vitals = SystemVitals.shared
+    @ObservedObject private var helper = PrivilegedHelper.shared
     @State private var mascotHovered = false
     @State private var filterText = ""
+    @State private var mergingBackgroundItem = false
+    @State private var backgroundMergeMessage: String?
 
     private struct ToolEntry: Identifiable {
         let id: String
@@ -25,6 +28,29 @@ struct OverviewView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 headerBar
+
+                if helper.needsAssociationRepair {
+                    duplicateBackgroundItemBanner
+                } else if let merged = backgroundMergeMessage {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(style.positive)
+                        Text(merged)
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(style.text)
+                        Spacer()
+                        Button {
+                            backgroundMergeMessage = nil
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(12)
+                    .housekeepingCard(cornerRadius: 12)
+                }
 
                 if let zombie = vitals.snapshot.zombieCandidates.first {
                     zombieAlertBanner(zombie)
@@ -152,33 +178,72 @@ struct OverviewView: View {
         }
     }
 
+    private var duplicateBackgroundItemBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "square.on.square.badge.person.crop")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(style.caution)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Two Housekeeper background items detected")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Update the helper plist once so macOS Login Items & Extensions groups everything under a single Housekeeper entry.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 10)
+            ThemeButton(
+                title: mergingBackgroundItem ? "Merging…" : "Merge Into One",
+                systemImage: "arrow.triangle.merge",
+                isPrimary: true,
+                isEnabled: !mergingBackgroundItem
+            ) {
+                mergingBackgroundItem = true
+                Task {
+                    do {
+                        try await helper.install()
+                        backgroundMergeMessage = "Merged! macOS now groups Housekeeper's helper under the single Housekeeper entry."
+                    } catch {
+                        backgroundMergeMessage = error.localizedDescription
+                    }
+                    mergingBackgroundItem = false
+                    helper.refresh()
+                }
+            }
+        }
+        .padding(14)
+        .housekeepingCard(cornerRadius: 14, highlighted: true)
+    }
+
     // MARK: - Hero Quick Launchpad (4 Everyday Actions)
 
     private var heroQuickDeck: some View {
-        HStack(spacing: 12) {
-            OverviewHeroTile(
-                title: "Clean Up",
-                subtitle: "Safe junk & caches",
-                icon: "sparkles"
-            ) { appState.showClean = true }
+        LiquidGlassGroup(spacing: 12) {
+            HStack(spacing: 12) {
+                OverviewHeroTile(
+                    title: "Clean Up",
+                    subtitle: "Safe junk & caches",
+                    icon: "sparkles"
+                ) { appState.showClean = true }
 
-            OverviewHeroTile(
-                title: "Clean VPN",
-                subtitle: "WARP & Clean IPs",
-                icon: "checkmark.shield.fill"
-            ) { appState.showCloudflareVPN = true }
+                OverviewHeroTile(
+                    title: "Clean VPN",
+                    subtitle: "WARP & Clean IPs",
+                    icon: "checkmark.shield.fill"
+                ) { appState.showCloudflareVPN = true }
 
-            OverviewHeroTile(
-                title: "Speed Test",
-                subtitle: "Ping & throughput",
-                icon: "speedometer"
-            ) { appState.showSpeedTest = true }
+                OverviewHeroTile(
+                    title: "Speed Test",
+                    subtitle: "Ping & throughput",
+                    icon: "speedometer"
+                ) { appState.showSpeedTest = true }
 
-            OverviewHeroTile(
-                title: "Space Lens",
-                subtitle: "Folders & large files",
-                icon: "internaldrive"
-            ) { appState.showDiskBrowser = true }
+                OverviewHeroTile(
+                    title: "Space Lens",
+                    subtitle: "Folders & large files",
+                    icon: "internaldrive"
+                ) { appState.showDiskBrowser = true }
+            }
         }
     }
 
@@ -208,12 +273,12 @@ struct OverviewView: View {
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.06)))
+                    .background(Capsule().fill(Color.primary.opacity(0.06)))
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .padding(.vertical, 9)
-        .housekeepingCard(cornerRadius: 10)
+        .liquidGlassChrome(in: Capsule(), interactive: true)
     }
 
     // MARK: - 2-Column Kitchen Sink
@@ -418,9 +483,13 @@ private struct OverviewHeroTile: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .housekeepingCard(cornerRadius: 13, highlighted: hovering)
+            .liquidGlassChrome(
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous),
+                tint: hovering ? style.accent.opacity(0.14) : nil,
+                interactive: true
+            )
             .offset(y: hovering && !reduceMotion ? -1.5 : 0)
-            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(HousekeepingPressableStyle(pressedScale: 0.97, haptic: true))
         .onHover { hovering = $0 }
@@ -643,16 +712,9 @@ struct SidebarNavigationRow: View {
 
     @ViewBuilder
     private var activePill: some View {
-        let pill = ZStack {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(style.rowSelection)
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(LinearGradient(colors: [.white.opacity(0.06), .clear], startPoint: .top, endPoint: .bottom))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(style.accent.opacity(0.24), lineWidth: 0.75)
-                )
-        }
+        let pill = Capsule(style: .continuous)
+            .fill(Color.clear)
+            .liquidGlassChrome(in: Capsule(style: .continuous), tint: style.accent.opacity(0.28), interactive: true)
         if let selectionNamespace, !reduceMotion {
             pill.matchedGeometryEffect(id: "sidebarActivePill", in: selectionNamespace)
         } else {

@@ -1,14 +1,20 @@
 import Foundation
+import Darwin
 
-/// One VPN client, driven through its own CLI.
+/// One VPN client, driven through its own CLI or direct server endpoint probe.
 ///
-/// The route engine knows nothing about Windscribe or ExpressVPN beyond this
-/// interface, so a third provider is a new conforming type plus one line in
-/// `ProviderRegistry.all` — nothing in the engine or the UI changes.
+/// The route engine knows nothing about Windscribe, Surfshark, or ExpressVPN
+/// beyond this interface, so a new provider is a conforming type plus one line
+/// in `ProviderRegistry.all` — nothing in the engine or the UI changes.
 protocol VPNProvider: Sendable {
 
     var kind: ProviderKind { get }
     var displayName: String { get }
+
+    /// True when testing routes drives a live OS tunnel (Windscribe, ExpressVPN).
+    /// False when the provider tests server endpoints directly (Surfshark),
+    /// leaving the user's active VPN completely untouched.
+    var managesSystemTunnel: Bool { get }
 
     /// Is the client present, is the account signed in, what is the tunnel doing.
     func probeStatus() async -> ProviderStatus
@@ -31,14 +37,30 @@ protocol VPNProvider: Sendable {
     func disconnect() async
     func tunnelState() async -> TunnelState
 
+    /// Direct non-destructive endpoint probe for providers whose Mac client
+    /// does not expose a CLI location/protocol switcher (e.g. Surfshark).
+    func probeDirectRoute(
+        _ target: RouteTarget,
+        options: RouteOptions,
+        probeHost: String,
+        probeURL: String
+    ) async -> RouteResult?
+
     /// The address the world sees. Differs from the plain address when the
     /// tunnel is really carrying traffic.
     func publicIP() async -> String?
 }
 
 extension VPNProvider {
+    var managesSystemTunnel: Bool { true }
     func prepare(_ target: RouteTarget) async throws {}
     func publicIP() async -> String? { nil }
+    func probeDirectRoute(
+        _ target: RouteTarget,
+        options: RouteOptions,
+        probeHost: String,
+        probeURL: String
+    ) async -> RouteResult? { nil }
 }
 
 enum ProviderRegistry {
@@ -368,21 +390,32 @@ struct WindscribeProvider: VPNProvider {
 
 // MARK: - Surfshark
 
+/// Surfshark's macOS client does not expose a CLI or AppleScript interface to
+/// switch server locations or protocols, and calling `scutil --nc start` on its
+/// PacketTunnel system extension ignores target locations and hangs indefinitely.
+///
+/// Instead, `SurfsharkProvider` performs fast, non-destructive direct endpoint
+/// reachability and latency probes (DNS resolution, non-blocking POSIX TCP port
+/// handshake timing, and ICMP RTT/jitter/loss) against Surfshark's real cluster
+/// hostnames (`clusters.json`). It never hijacks or disconnects the user's
+/// active VPN, cancels instantaneously, and ranks the fastest reachable servers
+/// to select inside the Surfshark app.
 struct SurfsharkProvider: VPNProvider {
 
     let kind: ProviderKind = .surfshark
     let displayName = "Surfshark"
+    let managesSystemTunnel = false
 
     private static let protocols: [(id: String, title: String, note: String)] = [
         ("wireguard", "WireGuard",
-         "Surfshark's default and fastest protocol. Modern, lightweight and highly responsive."),
-        ("openvpnudp", "OpenVPN UDP",
-         "OpenVPN over UDP. Fast and versatile across high-speed connections."),
-        ("openvpntcp", "OpenVPN TCP",
-         "OpenVPN over TCP port 443. Ideal for restricted or filtered networks."),
+         "Tests Surfshark server reachability, port 443/51820 readiness, and live ping/jitter without touching your current VPN."),
+        ("openvpntcp", "OpenVPN TCP (1443/443)",
+         "Tests direct TCP handshake reachability on Surfshark's OpenVPN TCP port 1443 (with 443 fallback) — ideal for restricted networks."),
+        ("openvpnudp", "OpenVPN UDP (1194)",
+         "Tests DNS resolution, ICMP latency/packet loss, and UDP reachability to each Surfshark server."),
     ]
 
-    private static let serviceName = "Surfshark. WireGuard®"
+    private static let appClustersPath = "/Applications/Surfshark.app/Contents/Resources/clusters.json"
 
     // MARK: - Locating the client
 
@@ -397,55 +430,45 @@ struct SurfsharkProvider: VPNProvider {
     // MARK: - Status
 
     func probeStatus() async -> ProviderStatus {
-        guard let path = Self.cliPath() else { return .unavailable }
+        let appInstalled = Self.cliPath() != nil
+        let tunnel = await tunnelState()
 
-        let scutilOutput = try? await RouteProcess.run("/usr/sbin/scutil", ["--nc", "status", Self.serviceName], timeout: 10)
-        let rawStatus = scutilOutput?.stdout.components(separatedBy: "\n").first?.trimmingCharacters(in: .whitespaces) ?? ""
-
-        let isConnected = rawStatus.lowercased().contains("connected") && !rawStatus.lowercased().contains("disconnected")
-        let isConnecting = rawStatus.lowercased().contains("connecting")
-        let isDisconnecting = rawStatus.lowercased().contains("disconnecting")
-        let tunnel: TunnelState = isConnected ? .connected : (isConnecting ? .connecting : (isDisconnecting ? .disconnecting : .disconnected))
-
-        let publicIP = isConnected ? await fetchExitIP() : nil
+        let detail: String
+        if !appInstalled {
+            detail = "Surfshark.app not in /Applications · Direct server check still available"
+        } else if tunnel == .connected {
+            detail = "Connected · Direct server check (leaves your active VPN untouched)"
+        } else {
+            detail = "Ready · Direct server check (leaves your active VPN untouched)"
+        }
 
         return ProviderStatus(
-            cliPath: path,
+            cliPath: Self.cliPath() ?? Self.appClustersPath,
             installed: true,
             loggedIn: true,
-            detail: isConnected ? "Connected" : (isConnecting ? "Connecting" : "Ready"),
+            detail: detail,
             tunnel: tunnel,
-            publicIP: publicIP
+            publicIP: nil,
+            advisory: nil
         )
     }
 
     func tunnelState() async -> TunnelState {
-        guard let output = try? await RouteProcess.run("/usr/sbin/scutil", ["--nc", "status", Self.serviceName], timeout: 8) else {
-            return .unknown
+        // Read-only inspection of all configured Surfshark macOS VPN services
+        // (covers WireGuard, Dausos, OpenVPN, IKEv2 without hardcoding one name).
+        guard let output = try? await RouteProcess.run("/usr/sbin/scutil", ["--nc", "list"], timeout: 4) else {
+            return .disconnected
         }
-        let line = output.stdout.components(separatedBy: "\n").first?.trimmingCharacters(in: .whitespaces) ?? ""
-        if line.lowercased().contains("connected") && !line.lowercased().contains("disconnected") {
-            return .connected
+        var sawSurfshark = false
+        for raw in output.stdout.split(separator: "\n") {
+            let line = raw.lowercased()
+            guard line.contains("surfshark") else { continue }
+            sawSurfshark = true
+            if line.contains("(connected)") { return .connected }
+            if line.contains("(connecting)") { return .connecting }
+            if line.contains("(disconnecting)") { return .disconnecting }
         }
-        if line.lowercased().contains("connecting") { return .connecting }
-        if line.lowercased().contains("disconnecting") { return .disconnecting }
-        if line.lowercased().contains("disconnected") { return .disconnected }
-        return .unknown
-    }
-
-    func publicIP() async -> String? {
-        let state = await tunnelState()
-        guard state == .connected else { return nil }
-        return await fetchExitIP()
-    }
-
-    private func fetchExitIP() async -> String? {
-        guard let curl = RouteProcess.which("/usr/bin/curl") ?? RouteProcess.which("curl"),
-              let out = try? await RouteProcess.run(curl, ["-sS", "--max-time", "5", "https://api.ipify.org"], timeout: 7) else {
-            return nil
-        }
-        let val = out.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        return val.isEmpty ? nil : val
+        return sawSurfshark ? .disconnected : .disconnected
     }
 
     // MARK: - Protocols
@@ -459,10 +482,18 @@ struct SurfsharkProvider: VPNProvider {
     // MARK: - Locations
 
     func loadLocations() async -> [VPNLocation] {
+        // 1. Prefer user-refreshed cache when present and non-empty.
         if FileManager.default.fileExists(atPath: RoutePaths.cachedSurfsharkLocations.path) {
             let locs = Self.parseClusters(at: RoutePaths.cachedSurfsharkLocations)
             if !locs.isEmpty { return locs }
         }
+        // 2. Prefer live clusters.json from the installed Surfshark.app bundle.
+        let appClustersURL = URL(fileURLWithPath: Self.appClustersPath)
+        if FileManager.default.fileExists(atPath: appClustersURL.path) {
+            let locs = Self.parseClusters(at: appClustersURL)
+            if !locs.isEmpty { return locs }
+        }
+        // 3. Fall back to Housekeeper's bundled Surfshark cluster snapshot.
         if let file = RoutePaths.bundledSurfsharkLocations {
             let locs = Self.parseClusters(at: file)
             if !locs.isEmpty {
@@ -471,6 +502,36 @@ struct SurfsharkProvider: VPNProvider {
             }
         }
         return []
+    }
+
+    static func refreshLocations() async throws -> Int {
+        if let curl = RouteProcess.which("/usr/bin/curl") ?? RouteProcess.which("curl") {
+            let output = try? await RouteProcess.run(
+                curl,
+                ["-sS", "--max-time", "12", "--compressed",
+                 "-A", "Housekeeping/1.0", "https://api.surfshark.com/v4/server/clusters/all"],
+                timeout: 15
+            )
+            if let out = output, !out.timedOut,
+               let data = out.stdout.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+               !json.isEmpty {
+                try data.write(to: RoutePaths.cachedSurfsharkLocations, options: .atomic)
+                return parseClusters(at: RoutePaths.cachedSurfsharkLocations).count
+            }
+        }
+
+        // Offline / blocked fallback: re-sync from installed Surfshark.app bundle.
+        let appURL = URL(fileURLWithPath: Self.appClustersPath)
+        if FileManager.default.fileExists(atPath: appURL.path),
+           let data = try? Data(contentsOf: appURL),
+           !parseClusters(at: appURL).isEmpty {
+            try? data.write(to: RoutePaths.cachedSurfsharkLocations, options: .atomic)
+            return parseClusters(at: appURL).count
+        }
+
+        let bundled = await SurfsharkProvider().loadLocations()
+        return bundled.count
     }
 
     static func parseClusters(at url: URL) -> [VPNLocation] {
@@ -505,17 +566,243 @@ struct SurfsharkProvider: VPNProvider {
         }
     }
 
-    // MARK: - Connecting
+    // MARK: - Direct Non-Destructive Route Probing
 
-    func beginConnect(_ target: RouteTarget) async throws {
-        let output = try await RouteProcess.run("/usr/sbin/scutil", ["--nc", "start", Self.serviceName], timeout: 15)
-        if output.exitCode != 0 && !output.stderr.isEmpty {
-            _ = try? await RouteProcess.run("/usr/bin/open", ["-g", "-a", "Surfshark"], timeout: 5)
+    func probeDirectRoute(
+        _ target: RouteTarget,
+        options: RouteOptions,
+        probeHost: String,
+        probeURL: String
+    ) async -> RouteResult? {
+        var result = RouteResult(target: target)
+        let hostname = target.location.node.contains(".")
+            ? target.location.node
+            : target.identifier
+        guard hostname.contains(".") else {
+            result.failureReason = "Missing Surfshark server hostname for \(target.location.city)"
+            return result
+        }
+        if Task.isCancelled {
+            result.failureReason = "Cancelled"
+            return result
+        }
+
+        let probeTimeout = min(max(options.connectTimeout, 2.5), 4.5)
+
+        // 1. Resolve cluster hostname to IPv4 with a hard deadline so DNS never stalls.
+        guard let ip = await Self.resolveIPv4(host: hostname, timeout: min(probeTimeout, 3.5)) else {
+            result.failureReason = Task.isCancelled ? "Cancelled" : "DNS did not resolve \(hostname)"
+            return result
+        }
+        result.exitIP = ip
+        result.exitCountry = target.location.countryCode.isEmpty ? nil : target.location.countryCode
+        if Task.isCancelled {
+            result.failureReason = "Cancelled"
+            return result
+        }
+
+        // 2. Protocol-specific non-blocking TCP port handshake check.
+        let tcpPorts: [UInt16]
+        switch target.proto {
+        case "openvpntcp":
+            tcpPorts = [1443, 443]
+        case "wireguard":
+            tcpPorts = [443, 1443]
+        default:
+            tcpPorts = [443, 1443]
+        }
+
+        var tcpSeconds: Double? = nil
+        for port in tcpPorts {
+            if Task.isCancelled {
+                result.failureReason = "Cancelled"
+                return result
+            }
+            if let elapsed = await Self.tcpConnectSeconds(ip: ip, port: port, timeout: min(probeTimeout, 3.0)) {
+                tcpSeconds = elapsed
+                break
+            }
+        }
+        if Task.isCancelled {
+            result.failureReason = "Cancelled"
+            return result
+        }
+
+        // 3. Fast ICMP ping for RTT, jitter, and packet loss.
+        let pingCount = max(2, min(options.pingCount, 4))
+        let ping = await RouteProbes.ping(host: ip, count: pingCount, timeout: min(probeTimeout, 4.0))
+        if Task.isCancelled {
+            result.failureReason = "Cancelled"
+            return result
+        }
+
+        if let ping, ping.received > 0 {
+            result.pingMs = ping.avgMs
+            result.jitterMs = ping.stddevMs
+            result.packetLoss = ping.loss
+        }
+
+        switch target.proto {
+        case "openvpntcp":
+            if let tcp = tcpSeconds {
+                result.connectSeconds = tcp
+                result.fetchSeconds = tcp
+                result.fetchSucceeded = true
+                if result.pingMs == nil {
+                    result.pingMs = tcp * 1000.0
+                    result.packetLoss = 0
+                }
+            } else {
+                result.failureReason = "TCP ports 1443/443 unreachable or filtered on \(hostname)"
+            }
+
+        case "wireguard":
+            if let tcp = tcpSeconds {
+                result.connectSeconds = tcp
+                result.fetchSeconds = tcp
+                result.fetchSucceeded = true
+                if result.pingMs == nil {
+                    result.pingMs = tcp * 1000.0
+                    result.packetLoss = 0
+                }
+            } else if let ping, ping.received > 0 {
+                result.connectSeconds = ping.avgMs / 1000.0
+                result.fetchSeconds = ping.avgMs / 1000.0
+                result.fetchSucceeded = true
+            } else {
+                result.failureReason = "Server unreachable (TCP & ping timed out on \(hostname))"
+            }
+
+        default: // openvpnudp
+            if let ping, ping.received > 0 {
+                result.connectSeconds = tcpSeconds ?? (ping.avgMs / 1000.0)
+                result.fetchSeconds = tcpSeconds ?? (ping.avgMs / 1000.0)
+                result.fetchSucceeded = true
+            } else if let tcp = tcpSeconds {
+                result.connectSeconds = tcp
+                result.fetchSeconds = tcp
+                result.pingMs = tcp * 1000.0
+                result.packetLoss = 0
+                result.fetchSucceeded = true
+            } else {
+                result.failureReason = "100% packet loss — \(hostname) unreachable"
+            }
+        }
+
+        return result
+    }
+
+    /// Unused for Surfshark because `managesSystemTunnel` is `false`. Kept as
+    /// strict no-ops so nothing can ever invoke `scutil --nc start/stop` and
+    /// hang or disconnect the user's active VPN.
+    func beginConnect(_ target: RouteTarget) async throws {}
+    func disconnect() async {}
+
+    // MARK: - Non-blocking POSIX network helpers
+
+    private static func resolveIPv4(host: String, timeout: Double) async -> String? {
+        final class ResumeOnce: @unchecked Sendable {
+            private let lock = NSLock()
+            private var done = false
+            func tryClaim() -> Bool {
+                lock.lock(); defer { lock.unlock() }
+                if done { return false }
+                done = true
+                return true
+            }
+        }
+
+        return await withCheckedContinuation { continuation in
+            let gate = ResumeOnce()
+
+            DispatchQueue.global(qos: .userInitiated).async {
+                var hints = addrinfo()
+                hints.ai_family = AF_INET
+                hints.ai_socktype = SOCK_STREAM
+                var res: UnsafeMutablePointer<addrinfo>?
+                let status = getaddrinfo(host, nil, &hints, &res)
+                var ipString: String?
+                if status == 0, let first = res {
+                    var addr = first.pointee.ai_addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr }
+                    var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                    if inet_ntop(AF_INET, &addr, &buf, socklen_t(INET_ADDRSTRLEN)) != nil {
+                        let bytes = buf.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+                        ipString = String(decoding: bytes, as: UTF8.self)
+                    }
+                    freeaddrinfo(res)
+                }
+                if gate.tryClaim() {
+                    continuation.resume(returning: ipString)
+                }
+            }
+
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
+                if gate.tryClaim() {
+                    continuation.resume(returning: nil)
+                }
+            }
         }
     }
 
-    func disconnect() async {
-        _ = try? await RouteProcess.run("/usr/sbin/scutil", ["--nc", "stop", Self.serviceName], timeout: 10)
+    /// Non-blocking POSIX TCP handshake with hard `poll()` timeout so a
+    /// blackholed IP can never hang past `timeout` seconds.
+    private static func tcpConnectSeconds(ip: String, port: UInt16, timeout: Double) async -> Double? {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let started = CFAbsoluteTimeGetCurrent()
+                let fd = socket(AF_INET, SOCK_STREAM, 0)
+                guard fd >= 0 else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                defer { close(fd) }
+
+                let flags = fcntl(fd, F_GETFL, 0)
+                _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
+
+                var addr = sockaddr_in()
+                addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+                addr.sin_family = sa_family_t(AF_INET)
+                addr.sin_port = port.bigEndian
+                guard inet_pton(AF_INET, ip, &addr.sin_addr) == 1 else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                let rc = withUnsafePointer(to: &addr) { ptr in
+                    ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sock in
+                        connect(fd, sock, socklen_t(MemoryLayout<sockaddr_in>.size))
+                    }
+                }
+
+                if rc == 0 {
+                    continuation.resume(returning: max(0.001, CFAbsoluteTimeGetCurrent() - started))
+                    return
+                }
+
+                guard errno == EINPROGRESS else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                var pfd = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+                let timeoutMs = Int32(max(200, min(timeout * 1000.0, 5000.0)))
+                let polled = poll(&pfd, 1, timeoutMs)
+                guard polled > 0, (pfd.revents & Int16(POLLOUT)) != 0 else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                var sockErr: Int32 = 0
+                var errLen = socklen_t(MemoryLayout<Int32>.size)
+                guard getsockopt(fd, SOL_SOCKET, SO_ERROR, &sockErr, &errLen) == 0, sockErr == 0 else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                continuation.resume(returning: max(0.001, CFAbsoluteTimeGetCurrent() - started))
+            }
+        }
     }
 }
 

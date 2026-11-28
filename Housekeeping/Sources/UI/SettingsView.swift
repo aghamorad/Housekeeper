@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage("housekeeping.textZoomStep") private var textZoomStep = 0
     @AppStorage("housekeeping.showInDock") private var showInDock = true
     @AppStorage("housekeeping.startInMenuBarAtLogin") private var startInMenuBarAtLogin = true
+    @AppStorage(CleanupModeSettings.quarantineModeKey) private var quarantineModeEnabled = false
 
     var body: some View {
         Form {
@@ -120,12 +121,31 @@ struct SettingsView: View {
                     }
                     Spacer()
                     if helper.isAvailable {
-                        Button("Remove Helper") {
-                            do {
-                                try helper.uninstall()
-                                helperNotice = "The helper was removed. Privileged actions will ask for a password again."
-                            } catch {
-                                helperNotice = error.localizedDescription
+                        HStack(spacing: 8) {
+                            if helper.needsAssociationRepair {
+                                Button(installingHelper ? "Merging…" : "Merge Duplicate Background Item") {
+                                    installingHelper = true
+                                    Task {
+                                        do {
+                                            try await helper.install()
+                                            helperNotice = "Updated helper registration. macOS Login Items & Extensions now groups everything under one Housekeeper entry."
+                                        } catch {
+                                            helperNotice = error.localizedDescription
+                                        }
+                                        installingHelper = false
+                                        helper.refresh()
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(installingHelper)
+                            }
+                            Button("Remove Helper") {
+                                do {
+                                    try helper.uninstall()
+                                    helperNotice = "The helper was removed. Privileged actions will ask for a password again."
+                                } catch {
+                                    helperNotice = error.localizedDescription
+                                }
                             }
                         }
                     } else {
@@ -203,10 +223,18 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("Safety") {
-                safetyLine("Housekeeping never ticks anything for you. Every scan starts with an empty selection.", icon: "checkmark.square")
-                safetyLine("Cleaning moves items into Quarantine. Nothing is deleted, and everything moved can be put back.", icon: "arrow.uturn.backward")
-                safetyLine("Anything Housekeeping cannot prove is replaceable is shown but locked, with the reason stated.", icon: "lock.fill")
+            Section("Cleaning & Safety") {
+                Toggle("Use Quarantine Safety Net instead of macOS Trash", isOn: $quarantineModeEnabled)
+
+                Text(quarantineModeEnabled
+                     ? "On. Clean Up and Uninstall Apps hold removed files inside ~/Housekeeping Quarantine first, with 1-click Restore and a sidebar entry."
+                     : "Off (default). Clean Up and Uninstall Apps send items straight to macOS Trash — simple and immediate, with no extra Quarantine folder.")
+                    .font(.callout)
+                    .foregroundStyle(style.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                safetyLine("Housekeeper never ticks anything without you. Personal documents, Apple containers, and AI models stay protected in both modes.", icon: "checkmark.shield")
+                safetyLine("Anything Housekeeper cannot prove is replaceable is locked, with the reason stated.", icon: "lock.fill")
             }
 
             // Where the "ignore this one from now on" choice is undone. The choice

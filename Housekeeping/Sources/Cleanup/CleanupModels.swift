@@ -1,5 +1,23 @@
 import Foundation
 
+/// Global preference controlling whether cleaning and uninstalling send items
+/// directly to macOS Trash (default: simple, immediate) or stage them in
+/// `~/Housekeeping Quarantine` first (opt-in safety net).
+enum CleanupModeSettings {
+    static let quarantineModeKey = "housekeeping.quarantineModeEnabled"
+    static let hasChosenModeKey = "housekeeping.hasChosenCleanupMode"
+
+    static var isQuarantineModeEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: quarantineModeKey) }
+        set { UserDefaults.standard.set(newValue, forKey: quarantineModeKey) }
+    }
+
+    static var hasChosenMode: Bool {
+        get { UserDefaults.standard.bool(forKey: hasChosenModeKey) }
+        set { UserDefaults.standard.set(newValue, forKey: hasChosenModeKey) }
+    }
+}
+
 /// Counts reviewed top-level items, never estimates bytes copied or time remaining.
 /// A completed item has a recorded outcome; a permission request is still in flight.
 struct UninstallProgress: Sendable, Equatable {

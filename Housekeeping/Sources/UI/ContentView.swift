@@ -18,6 +18,9 @@ struct ContentView: View {
     @State private var showUpdateAvailableAlert = false
     @State private var updateAvailableMessage = ""
     @State private var promptedUpdateCommit: String? = nil
+    @State private var showCleanupModeChoice = false
+    @AppStorage(CleanupModeSettings.hasChosenModeKey) private var hasChosenCleanupMode = false
+    @AppStorage(CleanupModeSettings.quarantineModeKey) private var quarantineModeEnabled = false
 
 
     /// The view a sheet shows, one screen per case. Each is given the
@@ -134,6 +137,20 @@ struct ContentView: View {
                 if PrivilegedHelper.shared.isLegacyInstall {
                     showLegacyHelperAlert = true
                 }
+                if !hasChosenCleanupMode {
+                    showCleanupModeChoice = true
+                }
+            }
+            .sheet(isPresented: $showCleanupModeChoice) {
+                CleanupModeOnboardingSheet(
+                    quarantineModeEnabled: $quarantineModeEnabled,
+                    onContinue: {
+                        hasChosenCleanupMode = true
+                        showCleanupModeChoice = false
+                    }
+                )
+                .environment(\.uiStyle, style)
+                .housekeepingSurface(style)
             }
             .alert("Replace the old root helper?", isPresented: $showLegacyHelperAlert) {
                 Button("Replace It Now") {
@@ -501,71 +518,76 @@ struct ScreenChrome<Content: View>: View {
                     JobBar()
                     VStack(spacing: 0) {
                         modernTopBar
-                        Rectangle().fill(style.border.opacity(0.45)).frame(height: 1)
                         screen
                     }
                 }
+                .ignoresSafeArea(.container, edges: .top)
             }
         }
     }
 
     private var modernTopBar: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 4) {
-                Button {
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                        appState.goBackWorkspace()
-                    }
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 26, height: 26)
-                        .background(Color.primary.opacity(appState.canGoBackWorkspace ? 0.06 : 0.02), in: RoundedRectangle(cornerRadius: 6))
-                }
-                .buttonStyle(.plain)
-                .disabled(!appState.canGoBackWorkspace)
-                .opacity(appState.canGoBackWorkspace ? 1 : 0.35)
-                .help("Back (⌘[)")
-
-                Button {
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                        appState.goForwardWorkspace()
-                    }
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 26, height: 26)
-                        .background(Color.primary.opacity(appState.canGoForwardWorkspace ? 0.06 : 0.02), in: RoundedRectangle(cornerRadius: 6))
-                }
-                .buttonStyle(.plain)
-                .disabled(!appState.canGoForwardWorkspace)
-                .opacity(appState.canGoForwardWorkspace ? 1 : 0.35)
-                .help("Forward (⌘])")
-
-                if appState.workspace != nil || !appState.showOverview {
+        HStack(spacing: 12) {
+            LiquidGlassGroup(spacing: 6) {
+                HStack(spacing: 2) {
                     Button {
                         withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-                            appState.goHomeWorkspace()
+                            appState.goBackWorkspace()
                         }
                     } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "house")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("Home")
-                                .font(.system(size: 11.5, weight: .medium))
-                        }
-                        .padding(.horizontal, 8)
-                        .frame(height: 26)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 28, height: 28)
+                            .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .help("Return to Dashboard (⌘0)")
+                    .disabled(!appState.canGoBackWorkspace)
+                    .opacity(appState.canGoBackWorkspace ? 1 : 0.35)
+                    .help("Back (⌘[)")
+
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                            appState.goForwardWorkspace()
+                        }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 28, height: 28)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!appState.canGoForwardWorkspace)
+                    .opacity(appState.canGoForwardWorkspace ? 1 : 0.35)
+                    .help("Forward (⌘])")
+
+                    if appState.workspace != nil || !appState.showOverview {
+                        Divider().frame(height: 14).padding(.horizontal, 2)
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                                appState.goHomeWorkspace()
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "house")
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text("Home")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .padding(.horizontal, 9)
+                            .frame(height: 28)
+                            .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Return to Dashboard (⌘0)")
+                    }
                 }
+                .padding(.horizontal, 4)
+                .liquidGlassChrome(in: Capsule(), interactive: true)
             }
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13.5, weight: .semibold))
                     .foregroundStyle(style.text)
                     .lineLimit(1)
                 if let subtitle, !subtitle.isEmpty {
@@ -578,45 +600,50 @@ struct ScreenChrome<Content: View>: View {
 
             Spacer(minLength: 8)
 
-            Button {
-                NotificationCenter.default.post(name: .housekeepingOpenQuickJump, object: nil)
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11))
-                        .foregroundStyle(style.secondaryText)
-                    Text("Jump to any tool…")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(style.secondaryText)
-                    Text("⌘/")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
-                        .foregroundStyle(style.secondaryText)
-                }
-                .padding(.horizontal, 10)
-                .frame(height: 26)
-                .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(style.border, lineWidth: 0.75))
-            }
-            .buttonStyle(.plain)
-            .help("Search and jump to any Housekeeper tool (⌘/)")
+            LiquidGlassGroup(spacing: 8) {
+                HStack(spacing: 8) {
+                    Button {
+                        NotificationCenter.default.post(name: .housekeepingOpenQuickJump, object: nil)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(style.secondaryText)
+                            Text("Jump to any tool…")
+                                .font(.system(size: 12))
+                                .foregroundStyle(style.secondaryText)
+                            Text("⌘/")
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(Color.primary.opacity(0.07), in: Capsule())
+                                .foregroundStyle(style.secondaryText)
+                        }
+                        .padding(.horizontal, 12)
+                        .frame(height: 30)
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .liquidGlassChrome(in: Capsule(), interactive: true)
+                    .help("Search and jump to any Housekeeper tool (⌘/)")
 
-            Button {
-                NSApp.keyWindow?.toggleFullScreen(nil)
-            } label: {
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .frame(width: 26, height: 26)
-                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                    Button {
+                        NSApp.keyWindow?.toggleFullScreen(nil)
+                    } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .frame(width: 30, height: 30)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .liquidGlassChrome(in: Circle(), interactive: true)
+                    .help("Toggle macOS Full Screen (⌃⌘F)")
+                }
             }
-            .buttonStyle(.plain)
-            .help("Toggle macOS Full Screen (⌃⌘F)")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
-        .background(style.groupingBackground.opacity(0.55))
+        .padding(.horizontal, 18)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
     }
 
     private var screen: some View {
@@ -735,6 +762,7 @@ private struct Job: Identifiable {
 private struct JobBar: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.uiStyle) private var style
+    @AppStorage(CleanupModeSettings.quarantineModeKey) private var quarantineModeEnabled = false
     @State private var showAdvancedTools: Bool = false
     @State private var mascotHovered: Bool = false
     @Namespace private var sidebarSelectionNS
@@ -828,7 +856,7 @@ private struct JobBar: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 14)
+            .padding(.horizontal, 16).padding(.top, 38).padding(.bottom, 14)
             .contentShape(Rectangle())
             .onTapGesture {
                 HousekeepingFeedback.press()
@@ -880,7 +908,8 @@ private struct JobBar: View {
                         if let job = allJobs.first(where: { $0.id == "uninstaller" }) {
                             sidebarJob(job, customTitle: "Uninstall Apps", customIcon: "xmark.app")
                         }
-                        if let job = allJobs.first(where: { $0.id == "quarantine" }) {
+                        if (quarantineModeEnabled || appState.hasQuarantineItems),
+                           let job = allJobs.first(where: { $0.id == "quarantine" }) {
                             sidebarJob(job, customTitle: "Quarantine", customIcon: "archivebox")
                         }
                         if let job = allJobs.first(where: { $0.id == "left-alone" }) {
@@ -3732,10 +3761,117 @@ private struct QuickJumpPalette: View {
                 }
             }
             .frame(width: 520)
-            .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(style.border, lineWidth: 1))
-            .shadow(color: .black.opacity(0.28), radius: 28, y: 12)
+            .liquidGlassChrome(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: .black.opacity(0.24), radius: 24, y: 10)
             .onAppear { fieldFocused = true }
         }
+    }
+}
+
+/// Shown once on first open so the user picks Direct Clean (straight to macOS
+/// Trash, default) or opt-in Quarantine Safety Net — and never thinks about it
+/// again unless they toggle it in Settings.
+private struct CleanupModeOnboardingSheet: View {
+    @Binding var quarantineModeEnabled: Bool
+    let onContinue: () -> Void
+    @Environment(\.uiStyle) private var style
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(spacing: 14) {
+                if let mascot = HousekeeperMascot.loadMascot() {
+                    Image(nsImage: mascot)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 48, height: 48)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("How should Housekeeper clean?")
+                        .font(.system(size: 21, weight: .semibold, design: .rounded))
+                    Text("Pick your style once. You can change this anytime in Settings.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(spacing: 10) {
+                choiceCard(
+                    title: "Direct Clean (Recommended)",
+                    subtitle: "Simple: you clean or uninstall it and it goes straight to macOS Trash. No extra Quarantine folder or second cleanup step.",
+                    icon: "trash.fill",
+                    selected: !quarantineModeEnabled
+                ) {
+                    HousekeepingFeedback.press()
+                    quarantineModeEnabled = false
+                }
+
+                choiceCard(
+                    title: "Quarantine Safety Net",
+                    subtitle: "Hold cleaned files and uninstalled apps inside ~/Housekeeping Quarantine first with a 1-click Undo button before deleting later.",
+                    icon: "archivebox.fill",
+                    selected: quarantineModeEnabled
+                ) {
+                    HousekeepingFeedback.press()
+                    quarantineModeEnabled = true
+                }
+            }
+
+            HStack {
+                Text("Personal files, Apple containers, and AI models remain protected in both modes.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 12)
+                ThemeButton(title: "Continue", systemImage: "checkmark", isPrimary: true) {
+                    onContinue()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(26)
+        .frame(width: 540)
+    }
+
+    private func choiceCard(
+        title: String,
+        subtitle: String,
+        icon: String,
+        selected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: icon)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(selected ? style.accent : .secondary)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        (selected ? style.accent : Color.primary).opacity(selected ? 0.16 : 0.06),
+                        in: Circle()
+                    )
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(style.text)
+                    Text(subtitle)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(selected ? style.accent : Color.secondary.opacity(0.45))
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .housekeepingCard(cornerRadius: 14, highlighted: selected)
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(HousekeepingPressableStyle(pressedScale: 0.985))
     }
 }

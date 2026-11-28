@@ -61,7 +61,8 @@ struct HousekeepingInk {
 }
 
 /// The signature burgundy identity shared by the modern window and its controls.
-/// Light mode keeps the same warm parchment-burgundy undertone with crisp contrast.
+/// Calibrated for macOS 26/27 Liquid Glass: luminous warm alabaster in Light Mode,
+/// deep obsidian-merlot in Dark Mode, high contrast with zero muddiness.
 enum HousekeepingPalette {
     private static func adaptive(dark: (CGFloat, CGFloat, CGFloat), light: (CGFloat, CGFloat, CGFloat)) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
@@ -70,12 +71,12 @@ enum HousekeepingPalette {
         })
     }
 
-    static let background = adaptive(dark: (38, 12, 16), light: (249, 244, 241))
-    static let sidebar = adaptive(dark: (28, 14, 17), light: (239, 229, 224))
-    static let panel = adaptive(dark: (51, 29, 33), light: (255, 252, 250))
-    static let raised = adaptive(dark: (64, 37, 41), light: (240, 228, 223))
-    static let accent = adaptive(dark: (234, 177, 158), light: (158, 47, 39))
-    static let button = adaptive(dark: (151, 57, 58), light: (158, 47, 39))
+    static let background = adaptive(dark: (24, 13, 16), light: (247, 244, 242))
+    static let sidebar = adaptive(dark: (30, 14, 18), light: (241, 234, 231))
+    static let panel = adaptive(dark: (42, 23, 27), light: (255, 253, 252))
+    static let raised = adaptive(dark: (56, 32, 37), light: (242, 235, 232))
+    static let accent = adaptive(dark: (238, 178, 160), light: (158, 42, 36))
+    static let button = adaptive(dark: (164, 48, 48), light: (158, 42, 36))
 }
 
 // MARK: - Retro Typography

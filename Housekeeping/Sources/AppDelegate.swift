@@ -97,6 +97,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             || window.title == "Settings"
         guard !isSettings else { return }
         window.styleMask.insert(.resizable)
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         window.collectionBehavior.remove(.fullScreenAuxiliary)
         window.collectionBehavior.remove(.fullScreenNone)
         window.collectionBehavior.insert(.fullScreenPrimary)

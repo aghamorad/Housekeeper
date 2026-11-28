@@ -81,6 +81,7 @@ final class PrivilegedHelper: ObservableObject {
     static let shared = PrivilegedHelper()
 
     nonisolated static let launchdLabel = "com.housekeeping.helper"
+    nonisolated static let appBundleIdentifier = "com.housekeeping.app"
     nonisolated static let daemonPlistPath = "/Library/LaunchDaemons/com.housekeeping.helper.plist"
     nonisolated static let socketPath = "/var/run/com.housekeeping.helper.sock"
     nonisolated static let ownerPath = "/var/db/com.housekeeping.helper.owner"
@@ -122,6 +123,16 @@ final class PrivilegedHelper: ObservableObject {
               let data = FileManager.default.contents(atPath: Self.daemonPlistPath),
               let text = String(data: data, encoding: .utf8) else { return false }
         return !text.contains(Self.helperBinaryPath)
+    }
+
+    /// True when the daemon plist was written without `AssociatedBundleIdentifiers`,
+    /// which causes macOS Login Items & Extensions to display a second, separate
+    /// "Housekeeper" background item alongside the main app.
+    var needsAssociationRepair: Bool {
+        guard isInstalled,
+              let data = FileManager.default.contents(atPath: Self.daemonPlistPath),
+              let text = String(data: data, encoding: .utf8) else { return false }
+        return !text.contains("AssociatedBundleIdentifiers")
     }
 
     func refresh() {
@@ -192,6 +203,10 @@ final class PrivilegedHelper: ObservableObject {
         <plist version="1.0">
         <dict>
             <key>Label</key><string>\(Self.launchdLabel)</string>
+            <key>AssociatedBundleIdentifiers</key>
+            <array>
+                <string>\(Self.appBundleIdentifier)</string>
+            </array>
             <key>ProgramArguments</key>
             <array>
                 <string>\(Self.helperBinaryPath)</string>

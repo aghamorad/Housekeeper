@@ -105,7 +105,7 @@ struct CleanerView: View {
         case .scanning:
             return "Looking around… \(model.progressLine)"
         case .working:
-            return "Moving things into Quarantine…"
+            return model.usesQuarantine ? "Moving things into Quarantine…" : "Cleaning selected items…"
         case .ready:
             if model.wasStopped { return "Partial scan · \(model.completedCategories.count) of \(CleanCategory.allCases.count) categories checked. Look Again to finish a fresh scan." }
             let when = model.lastScan?.formatted(date: .omitted, time: .shortened) ?? "just now"
@@ -132,9 +132,21 @@ struct CleanerView: View {
     private var activeCleanupProgress: some View {
         let progress = model.workProgress
         let current = progress?.path.map { URL(fileURLWithPath: $0).lastPathComponent }
+        let title: String
+        let subtitle: String
+        if model.category == .trash {
+            title = "Emptying the Trash…"
+            subtitle = "Permanently removing files currently in your Trash."
+        } else if model.usesQuarantine {
+            title = "Moving selected items to Quarantine…"
+            subtitle = "Every item is recorded so you can restore it later from Quarantine."
+        } else {
+            title = "Cleaning selected items…"
+            subtitle = "Moving selected junk straight to macOS Trash."
+        }
         return HousekeeperScanningBanner(
-            title: model.category == .trash ? "Emptying the Trash…" : "Safely moving selected items to Quarantine…",
-            subtitle: "Every item is recorded before it moves. Safe Quarantine keeps backups for 30 days.",
+            title: title,
+            subtitle: subtitle,
             currentItem: current.map { "Sweeping: " + $0 },
             stepCount: progress.map { "\($0.completed) of \($0.total)" },
             progressFraction: progress.map { Double($0.completed) / Double(max($0.total, 1)) },
@@ -808,14 +820,31 @@ struct CleanerView: View {
                         isEnabled: model.phase == .ready && !shown.isEmpty && selectedShown.count < shown.count,
                         help: "Select only the results on this shelf currently matching the search; nothing moves yet."
                     ) { model.setVisible(selected: true) }
-                    ThemeButton(title: cleanButtonTitle, systemImage: "checklist", isPrimary: true,
-                                isEnabled: !model.selectedCandidates.isEmpty && model.phase == .ready,
-                                help: "Review the selected paths before anything moves.") { model.requestClean() }
+                    ThemeButton(
+                        title: cleanButtonTitle,
+                        systemImage: model.usesQuarantine ? "archivebox" : "trash",
+                        isPrimary: true,
+                        isEnabled: !model.selectedCandidates.isEmpty && model.phase == .ready,
+                        help: model.usesQuarantine
+                            ? "Review the selected paths before moving to Quarantine."
+                            : "Clean the selected items straight to macOS Trash."
+                    ) { model.cleanOrRequestReview() }
+                }
+                if !model.usesQuarantine && !model.trash.isEmpty && model.category != .trash {
+                    ThemeButton(
+                        title: "Empty Trash (\(model.trash.size.sizeDescription))",
+                        systemImage: "trash.slash",
+                        isDestructive: true,
+                        isEnabled: model.phase == .ready,
+                        help: "Empty macOS Trash now to reclaim disk space immediately."
+                    ) { model.requestEmptyTrash() }
                 }
                 if model.category == .uninstall && model.anyAppsSelected {
                     ThemeButton(title: bulkUninstallTitle, systemImage: "trash.fill", isDestructive: true,
                                 isEnabled: model.phase == .ready,
-                                help: "Review the exact paths before any application moves.") {
+                                help: model.usesQuarantine
+                                    ? "Move selected apps to Quarantine."
+                                    : "Move selected apps straight to macOS Trash.") {
                         model.requestUninstallSelected()
                     }
                 }
@@ -826,19 +855,23 @@ struct CleanerView: View {
 
     private var bulkUninstallTitle: String {
         let count = model.selectedApps.count
-        guard count > 0 else { return "Uninstall selected…" }
-        return "Uninstall \(count) selected…"
+        guard count > 0 else { return "Uninstall Selected" }
+        return "Uninstall \(count) Selected"
     }
 
     private var cleanButtonTitle: String {
         let count = model.selectedCandidates.count
-        guard count > 0 else { return "Review selection…" }
-        return "Review \(count) selected…"
+        guard count > 0 else { return model.usesQuarantine ? "Move to Quarantine" : "Clean Selected" }
+        let size = model.selectedSize.sizeDescription
+        if model.usesQuarantine {
+            return "Quarantine \(count) (\(size))"
+        }
+        return "Clean \(count) (\(size))"
     }
 
     private var statusLine: Text {
         if !model.failures.isEmpty {
-            return Text("\(model.failures.count) thing\(model.failures.count == 1 ? "" : "s") could not be moved. Open Scan Details to read the reasons.")
+            return Text("\(model.failures.count) thing\(model.failures.count == 1 ? "" : "s") could not be moved. Open Scan Info to read the reasons.")
         }
         if let outcome = model.outcome {
             return Text(outcome)
@@ -848,14 +881,19 @@ struct CleanerView: View {
         }
         let count = model.selectedCandidates.count
         if count == 0 {
-            return Text("Select items to review. Nothing moves until you confirm the exact paths.")
+            return Text(model.usesQuarantine
+                        ? "Quarantine Mode is on. Select items to move to ~/Housekeeping Quarantine."
+                        : "Select items or click Smart Select Safe Junk, then click Clean — items go straight to macOS Trash.")
         }
         let hidden = model.selectedCandidates.filter { $0.category != model.category || !model.matches($0.name, path: $0.url.path, detail: $0.detail) }.count
         let downloads = model.selectedDownloadItems
         let downloadNote = downloads.isEmpty
             ? ""
             : " · \(downloads.count) must be downloaded again (\(downloads.reduce(Int64(0)) { $0 + $1.size }.sizeDescription))"
-        return Text("\(count) selected across all categories · \(model.selectedSize.sizeDescription) held if moved · frees 0 B until deleted from Quarantine\(hidden > 0 ? " · \(hidden) outside this view" : "")\(downloadNote).")
+        if model.usesQuarantine {
+            return Text("\(count) selected · \(model.selectedSize.sizeDescription) · held in Quarantine until deleted\(hidden > 0 ? " · \(hidden) outside this view" : "")\(downloadNote).")
+        }
+        return Text("\(count) selected · \(model.selectedSize.sizeDescription) ready to clean to Trash\(hidden > 0 ? " · \(hidden) outside this view" : "")\(downloadNote).")
     }
 
     // MARK: - Confirmation
@@ -907,14 +945,20 @@ struct CleanerView: View {
                             }
                         }.frame(maxHeight: 200)
                         if action == .clean {
-                            Label("Reversible: moved to Quarantine so you can restore anytime.", systemImage: "checkmark.shield.fill")
-                                .font(style.smallFont)
-                                .foregroundColor(style.positive)
+                            if model.usesQuarantine {
+                                Label("Reversible: moved to Quarantine so you can restore anytime.", systemImage: "checkmark.shield.fill")
+                                    .font(style.smallFont)
+                                    .foregroundColor(style.positive)
+                            } else {
+                                Label("Moves straight to macOS Trash (recoverable from Trash until emptied).", systemImage: "trash")
+                                    .font(style.smallFont)
+                                    .foregroundColor(style.secondaryText)
+                            }
                         }
                     }
 
                     if action == .emptyTrash {
-                        Text("This is the one action in Housekeeper that cannot be undone. There is no Quarantine copy of what is in the Trash.")
+                        Text("This permanently empties your macOS Trash and cannot be undone.")
                             .font(style.smallFont)
                             .foregroundColor(style.caution)
                     }
@@ -929,13 +973,17 @@ struct CleanerView: View {
                         Spacer()
                         ThemeButton(title: "Cancel") { model.cancelPending() }
                         ThemeButton(
-                            title: action == .emptyTrash ? "Delete Permanently" : "Move to Quarantine",
-                            isPrimary: true,
+                            title: action == .emptyTrash
+                                ? "Empty Trash Permanently"
+                                : (model.usesQuarantine ? "Move to Quarantine" : "Move to Trash"),
+                            isPrimary: action != .emptyTrash,
                             isDestructive: action == .emptyTrash,
                             isEnabled: true,
                             help: action == .emptyTrash
                                 ? "Removes what is in the Trash for good."
-                                : "Moves everything listed into Quarantine, where it can be put back."
+                                : (model.usesQuarantine
+                                   ? "Moves everything listed into Quarantine, where it can be put back."
+                                   : "Moves everything listed straight to macOS Trash.")
                         ) {
                             model.confirmPending()
                         }

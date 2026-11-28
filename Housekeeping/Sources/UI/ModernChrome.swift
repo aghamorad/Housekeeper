@@ -20,36 +20,87 @@ struct NativeVisualEffectView: NSViewRepresentable {
     }
 }
 
-/// Signature burgundy backdrop with subtle studio lighting and zero idle timers.
+/// Signature macOS 26/27 Liquid Glass backdrop: translucent desktop vibrancy in
+/// the sidebar and calm, luminous tinted ground in the workspace (0.0% idle CPU).
 struct HousekeepingBackdrop: View {
     let style: UIStyle
     @Environment(\.colorScheme) private var scheme
     var sidebar = false
 
     var body: some View {
-        let base = sidebar ? HousekeepingPalette.sidebar : style.windowBackground
         ZStack {
-            base
-            if !style.isRetro {
+            if style.isRetro {
+                style.windowBackground
+            } else if sidebar {
+                NativeVisualEffectView(material: .sidebar, blendingMode: .behindWindow)
+                HousekeepingPalette.sidebar.opacity(scheme == .dark ? 0.56 : 0.42)
+            } else {
+                style.windowBackground
                 LinearGradient(
                     colors: [
-                        style.accent.opacity(sidebar ? 0.04 : 0.065),
-                        .clear,
-                        .black.opacity(scheme == .dark ? 0.14 : 0.02)
+                        style.accent.opacity(scheme == .dark ? 0.055 : 0.035),
+                        .clear
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
-                )
-                RadialGradient(
-                    colors: [style.accentShaded.opacity(sidebar ? 0.05 : 0.12), .clear],
-                    center: .topTrailing,
-                    startRadius: 0,
-                    endRadius: 680
                 )
             }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+/// Authentic macOS 26/27 Liquid Glass surface for navigation, floating toolbars,
+/// action capsules, and hero controls — GPU-composited with 0.0% idle CPU and
+/// clean `.regularMaterial` fallback on macOS 13–15.
+extension View {
+    @ViewBuilder
+    func liquidGlassChrome<S: InsettableShape>(
+        in shape: S,
+        tint: Color? = nil,
+        interactive: Bool = false
+    ) -> some View {
+        if #available(macOS 26.0, *) {
+            let glass: Glass = {
+                var base = Glass.regular
+                if let tint { base = base.tint(tint) }
+                if interactive { base = base.interactive() }
+                return base
+            }()
+            self.glassEffect(glass, in: shape)
+        } else {
+            self
+                .background(.regularMaterial, in: shape)
+                .overlay {
+                    if let tint {
+                        shape.fill(tint.opacity(0.18))
+                    }
+                    shape.strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.75)
+                }
+        }
+    }
+}
+
+/// Groups sibling Liquid Glass controls so macOS 26/27 morphs and refracts them
+/// together cleanly, while compiling cleanly on macOS 13–15.
+struct LiquidGlassGroup<Content: View>: View {
+    let spacing: CGFloat
+    private let content: Content
+
+    init(spacing: CGFloat = 8, @ViewBuilder content: () -> Content) {
+        self.spacing = spacing
+        self.content = content()
+    }
+
+    var body: some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) {
+                content
+            }
+        } else {
+            content
+        }
     }
 }
 
@@ -77,36 +128,30 @@ private struct HousekeepingCardChrome: ViewModifier {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return content
             .background {
-                shape.fill(style.rowBackground)
-                shape.fill(LinearGradient(
-                    colors: [
-                        style.accent.opacity(prominent ? 0.09 : (highlighted ? 0.08 : 0.025)),
-                        .clear,
-                        .black.opacity(scheme == .dark ? 0.06 : 0.01)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ))
+                shape.fill(.ultraThinMaterial)
+                shape.fill(style.rowBackground.opacity(scheme == .dark ? (prominent ? 0.62 : 0.54) : (prominent ? 0.82 : 0.74)))
+                if highlighted || prominent {
+                    shape.fill(style.accent.opacity(highlighted ? 0.08 : 0.035))
+                }
             }
             .overlay {
                 shape.strokeBorder(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(scheme == .dark ? (highlighted ? 0.22 : 0.13) : 0.85),
-                            style.accent.opacity(highlighted ? 0.38 : 0.10),
-                            Color.primary.opacity(0.05)
+                            Color.white.opacity(scheme == .dark ? (highlighted ? 0.24 : 0.14) : 0.90),
+                            highlighted ? style.accent.opacity(0.45) : Color.primary.opacity(scheme == .dark ? 0.07 : 0.08)
                         ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                        startPoint: .top,
+                        endPoint: .bottom
                     ),
-                    lineWidth: highlighted ? 1 : 0.75
+                    lineWidth: highlighted ? 1.0 : 0.75
                 )
             }
             .shadow(
-                color: .black.opacity(scheme == .dark ? (prominent ? 0.22 : 0.12) : 0.04),
-                radius: prominent ? 16 : 8,
+                color: .black.opacity(scheme == .dark ? (prominent ? 0.18 : 0.08) : (prominent ? 0.05 : 0.025)),
+                radius: prominent ? 12 : 5,
                 x: 0,
-                y: prominent ? 8 : 4
+                y: prominent ? 5 : 2
             )
     }
 }
@@ -140,76 +185,45 @@ struct HousekeepingButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
 
+    private static let destructiveCrimson = Color(red: 0.76, green: 0.14, blue: 0.16)
+
     func makeBody(configuration: Configuration) -> some View {
         let pressed = configuration.isPressed
-        let lifted = hovering && enabled && !reduceMotion
-        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        let shape = Capsule(style: .continuous)
+        let tint: Color? = {
+            switch kind {
+            case .primary: return enabled ? style.accentShaded : nil
+            case .destructive: return enabled ? Self.destructiveCrimson : nil
+            case .secondary, .quiet: return nil
+            }
+        }()
+
         return configuration.label
             .font(style.labelFont)
             .foregroundStyle((kind == .primary || kind == .destructive) && enabled ? Color.white : style.text)
-            .padding(.horizontal, kind == .quiet ? 9 : 13)
+            .padding(.horizontal, kind == .quiet ? 10 : 14)
             .padding(.vertical, 7)
             .background {
-                switch kind {
-                case .primary:
-                    shape.fill(style.accentShaded.opacity(enabled ? 1.0 : 0.28))
-                    shape.fill(LinearGradient(
-                        colors: [.white.opacity(hovering ? 0.22 : 0.10), .clear, .black.opacity(0.10)],
-                        startPoint: .top, endPoint: .bottom
-                    ))
-                case .secondary:
-                    shape.fill(Color.primary.opacity(hovering ? 0.10 : 0.045))
-                case .quiet:
+                if kind == .quiet {
                     shape.fill(Color.primary.opacity(hovering ? 0.08 : 0))
-                case .destructive:
-                    // The one colour in the app that means "this cannot be put
-                    // back". It is a fill, not a tint on a grey button, because a
-                    // delete has to read as a different kind of act.
-                    shape.fill(Color(red: 0.62, green: 0.13, blue: 0.15).opacity(enabled ? 1.0 : 0.28))
-                    shape.fill(LinearGradient(
-                        colors: [.white.opacity(hovering ? 0.20 : 0.09), .clear, .black.opacity(0.12)],
-                        startPoint: .top, endPoint: .bottom
-                    ))
+                } else if #available(macOS 26.0, *) {
+                    Color.clear
+                } else {
+                    switch kind {
+                    case .primary:
+                        shape.fill(style.accentShaded.opacity(enabled ? 1.0 : 0.30))
+                    case .destructive:
+                        shape.fill(Self.destructiveCrimson.opacity(enabled ? 1.0 : 0.30))
+                    case .secondary:
+                        shape.fill(.regularMaterial)
+                        shape.fill(Color.primary.opacity(hovering ? 0.08 : 0.03))
+                    case .quiet:
+                        Color.clear
+                    }
                 }
             }
-            .overlay {
-                if kind != .quiet {
-                    shape.strokeBorder(
-                        LinearGradient(
-                            colors: [
-                                .white.opacity(kind == .primary ? (hovering ? 0.40 : 0.24) : 0.14),
-                                Color.primary.opacity(0.06)
-                            ],
-                            startPoint: .top, endPoint: .bottom
-                        ),
-                        lineWidth: 0.75
-                    )
-                }
-            }
-            .overlay {
-                if !reduceMotion {
-                    shape
-                        .fill(LinearGradient(
-                            colors: [.clear, .white.opacity(kind == .primary ? 0.18 : 0.09), .clear],
-                            startPoint: .leading, endPoint: .trailing
-                        ))
-                        .offset(x: hovering ? 24 : -36)
-                        .blendMode(.softLight)
-                        .clipShape(shape)
-                        .allowsHitTesting(false)
-                }
-            }
-            .shadow(
-                color: kind == .destructive && enabled
-                    ? Color(red: 0.62, green: 0.13, blue: 0.15).opacity(lifted ? 0.40 : 0.18)
-                    : kind == .primary && enabled
-                        ? style.accentShaded.opacity(lifted ? 0.42 : 0.18)
-                        : .black.opacity(lifted ? 0.12 : 0.04),
-                radius: lifted ? 10 : 4,
-                y: lifted ? 3 : 2
-            )
-            .scaleEffect(pressed && !reduceMotion ? 0.965 : (lifted ? 1.015 : 1))
-            .offset(y: pressed ? 0.5 : (lifted ? -0.5 : 0))
+            .modifier(ButtonGlassModifier(kind: kind, tint: tint, enabled: enabled, hovering: hovering))
+            .scaleEffect(pressed && !reduceMotion ? 0.965 : 1)
             .opacity(enabled ? 1 : 0.45)
             .animation(HousekeepingMotion.press, value: pressed)
             .animation(HousekeepingMotion.hover, value: hovering)
@@ -218,6 +232,36 @@ struct HousekeepingButtonStyle: ButtonStyle {
                 guard isPressed, enabled else { return }
                 HousekeepingFeedback.press()
             }
+    }
+}
+
+private struct ButtonGlassModifier: ViewModifier {
+    let kind: HousekeepingButtonStyle.Kind
+    let tint: Color?
+    let enabled: Bool
+    let hovering: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = Capsule(style: .continuous)
+        if kind == .quiet {
+            content
+        } else if #available(macOS 26.0, *) {
+            let glass: Glass = {
+                var g = Glass.regular
+                if let tint { g = g.tint(tint) }
+                if enabled { g = g.interactive() }
+                return g
+            }()
+            content.glassEffect(glass, in: shape)
+        } else {
+            content.overlay {
+                shape.strokeBorder(
+                    Color.white.opacity(kind == .secondary ? (hovering ? 0.24 : 0.14) : 0.25),
+                    lineWidth: 0.75
+                )
+            }
+        }
     }
 }
 

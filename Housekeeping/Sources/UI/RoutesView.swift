@@ -117,11 +117,13 @@ struct RoutesView: View {
                     .foregroundColor(style.secondaryText)
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(model.status.tunnel == .connected ? Color.green : Color.secondary.opacity(0.5))
+                        .fill(model.providerKind == .surfshark ? Color.green : (model.status.tunnel == .connected ? Color.green : Color.secondary.opacity(0.5)))
                         .frame(width: 7, height: 7)
-                    Text(model.status.tunnel == .connected
-                         ? "Tunnel up\(model.status.publicIP.map { " · exit \($0)" } ?? "")"
-                         : "No tunnel up right now")
+                    Text(model.providerKind == .surfshark
+                         ? "Direct server check · leaves your active VPN connected"
+                         : (model.status.tunnel == .connected
+                            ? "Tunnel up\(model.status.publicIP.map { " · exit \($0)" } ?? "")"
+                            : "No tunnel up right now"))
                         .font(style.smallFont)
                         .foregroundColor(style.secondaryText)
                 }
@@ -297,18 +299,33 @@ struct RoutesView: View {
     private var routePlainGuideCard: some View {
         DisclosureGroup(isExpanded: $showPlainGuide) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("What Route Sweep does: it connects to each selected VPN server and protocol (WireGuard, OpenVPN, etc.) one by one and checks whether real internet traffic actually gets through.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(style.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("What is going to happen: your internet will disconnect and reconnect several times while it runs. That is normal. When it finishes — or if you press Stop — Housekeeper closes the test tunnel cleanly so you are never stuck offline.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(style.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("How to start: 1) Make sure Windscribe, Surfshark, or ExpressVPN is signed in. 2) Pick Quick (1–5 min) and 2–3 countries. 3) Press Start, then connect to the fastest green route in your VPN app.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(style.text)
-                    .fixedSize(horizontal: false, vertical: true)
+                if model.providerKind == .surfshark {
+                    Text("Surfshark direct mode: Surfshark's Mac app does not provide a command-line switcher, so Housekeeper tests each Surfshark server directly (DNS, protocol port reachability, latency & packet loss) in ~2 seconds per server.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(style.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Your active VPN stays connected: Surfshark route sweeps never toggle or disconnect your current tunnel and stop instantaneously.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(style.positive)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("How to use: Pick Super Quick or Quick and a few countries, press Find My Best Route, then choose the fastest green city inside the Surfshark app.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(style.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("What Route Sweep does: it connects to each selected VPN server and protocol (WireGuard, OpenVPN, etc.) one by one and checks whether real internet traffic actually gets through.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(style.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("What is going to happen: your internet will disconnect and reconnect several times while it runs. That is normal. When it finishes — or if you press Stop — Housekeeper closes the test tunnel cleanly so you are never stuck offline.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(style.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("How to start: 1) Make sure Windscribe or ExpressVPN is signed in. 2) Pick Super Quick or Quick and 2–3 countries. 3) Press Start, then connect to the fastest green route in your VPN app.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(style.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 HStack(spacing: 8) {
                     ThemeButton(title: "Try Free Cloudflare Clean VPN") {
