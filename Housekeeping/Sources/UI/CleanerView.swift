@@ -303,13 +303,17 @@ struct CleanerView: View {
                 }
                 Spacer(minLength: 4)
             }
-            .padding(8)
+            .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? style.rowSelection : style.rowBackground)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isSelected ? style.rowSelection : Color.primary.opacity(0.035))
             )
-            .contentShape(Rectangle())
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(isSelected ? style.accent.opacity(0.45) : style.border.opacity(0.6), lineWidth: 0.75)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -475,7 +479,7 @@ struct CleanerView: View {
         .onTapGesture {
             model.applySelectionClick(candidate, order: model.visibleCandidates(in: model.category).map(\.id))
         }
-        .hoverHighlight(cornerRadius: 10, normal: style.rowBackground, hovered: style.groupingBackground, stroke: style.border)
+        .hoverHighlight(cornerRadius: 16, normal: style.rowBackground, hovered: style.groupingBackground, stroke: style.border)
         .contextMenu {
             Button {
                 leaveAlone(candidate.url, kind: candidate.category.title)
@@ -627,7 +631,7 @@ struct CleanerView: View {
             }
         }
         .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-        .hoverHighlight(cornerRadius: 10, normal: style.rowBackground, hovered: style.groupingBackground, stroke: style.border)
+        .hoverHighlight(cornerRadius: 16, normal: style.rowBackground, hovered: style.groupingBackground, stroke: style.border)
         .contextMenu {
             Button("Open") { NSWorkspace.shared.open(app.url) }
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([app.url]) }

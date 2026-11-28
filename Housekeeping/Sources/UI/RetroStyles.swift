@@ -60,9 +60,10 @@ struct HousekeepingInk {
     static let negative = Color(red: 255/255, green: 108/255, blue: 86/255)
 }
 
-/// The signature burgundy identity shared by the modern window and its controls.
-/// Calibrated for macOS 26/27 Liquid Glass: luminous warm alabaster in Light Mode,
-/// deep obsidian-merlot in Dark Mode, high contrast with zero muddiness.
+/// The signature identity shared by the modern window and its controls.
+/// Sleek macOS 26/27 Liquid Glass: translucent obsidian-neutral ground with
+/// vibrant ruby-oxblood jewel accents in Dark Mode; airy luminous frosted glass
+/// with rich crimson-oxblood accents in Light Mode — never flat muddy brown.
 enum HousekeepingPalette {
     private static func adaptive(dark: (CGFloat, CGFloat, CGFloat), light: (CGFloat, CGFloat, CGFloat)) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
@@ -71,12 +72,12 @@ enum HousekeepingPalette {
         })
     }
 
-    static let background = adaptive(dark: (24, 13, 16), light: (247, 244, 242))
-    static let sidebar = adaptive(dark: (30, 14, 18), light: (241, 234, 231))
-    static let panel = adaptive(dark: (42, 23, 27), light: (255, 253, 252))
-    static let raised = adaptive(dark: (56, 32, 37), light: (242, 235, 232))
-    static let accent = adaptive(dark: (238, 178, 160), light: (158, 42, 36))
-    static let button = adaptive(dark: (164, 48, 48), light: (158, 42, 36))
+    static let background = adaptive(dark: (18, 17, 20), light: (246, 245, 247))
+    static let sidebar = adaptive(dark: (24, 22, 26), light: (242, 240, 243))
+    static let panel = adaptive(dark: (34, 31, 36), light: (255, 255, 255))
+    static let raised = adaptive(dark: (48, 43, 50), light: (240, 238, 242))
+    static let accent = adaptive(dark: (242, 114, 102), light: (178, 38, 42))
+    static let button = adaptive(dark: (196, 48, 52), light: (178, 38, 42))
 }
 
 // MARK: - Retro Typography
@@ -387,7 +388,7 @@ private struct ThemePanelChrome: ViewModifier {
                 .overlay(Rectangle().stroke(RetroColors.insetBorder, lineWidth: 1))
         } else {
             content
-                .housekeepingCard(cornerRadius: 12)
+                .housekeepingCard(cornerRadius: 18)
         }
     }
 }

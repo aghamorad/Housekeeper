@@ -125,7 +125,7 @@ struct MenuBarPanel: View {
         .background {
             ZStack {
                 NativeVisualEffectView(material: .popover, blendingMode: .behindWindow)
-                HousekeepingInk.surface.opacity(0.76)
+                Color(red: 18/255, green: 16/255, blue: 20/255).opacity(0.62)
             }
         }
         // The popover is sized once, from the view it was built with. A detail

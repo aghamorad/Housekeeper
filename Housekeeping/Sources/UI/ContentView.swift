@@ -856,7 +856,7 @@ private struct JobBar: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 16).padding(.top, 38).padding(.bottom, 14)
+            .padding(.horizontal, 14).padding(.top, 34).padding(.bottom, 12)
             .contentShape(Rectangle())
             .onTapGesture {
                 HousekeepingFeedback.press()
@@ -917,8 +917,6 @@ private struct JobBar: View {
                         }
                     }
 
-                    Divider().padding(.horizontal, 4)
-
                     // Category 2: Hardware & Vitals
                     sidebarCategory("Hardware & Vitals") {
                         if let job = allJobs.first(where: { $0.id == "fans-thermals" }) {
@@ -935,8 +933,6 @@ private struct JobBar: View {
                         }
                     }
 
-                    Divider().padding(.horizontal, 4)
-
                     // Category 3: Creative Studios
                     sidebarCategory("Creative Studios") {
                         if let job = allJobs.first(where: { $0.id == "mediadock" }) {
@@ -949,8 +945,6 @@ private struct JobBar: View {
                             sidebarJob(job, customTitle: "Two Folders Diff", customIcon: "arrow.left.arrow.right")
                         }
                     }
-
-                    Divider().padding(.horizontal, 4)
 
                     // Category 4: Network & Routes
                     sidebarCategory("Network & Routes") {
@@ -974,8 +968,6 @@ private struct JobBar: View {
                         }
                     }
 
-                    Divider().padding(.horizontal, 4)
-
                     // Category 5: Maintenance & AI
                     sidebarCategory("Maintenance & AI") {
                         if let job = allJobs.first(where: { $0.id == "update-apps" }) {
@@ -995,33 +987,38 @@ private struct JobBar: View {
                 .padding(.horizontal, 10)
                 .padding(.bottom, 8)
             }
-            Divider().padding(.horizontal, 16).padding(.top, 12)
             VStack(spacing: 3) {
                 if #available(macOS 14.0, *) {
                     SettingsLink {
                         Label("Settings", systemImage: "gearshape")
                             .font(.system(size: 13))
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 10).padding(.vertical, 6)
-                            .contentShape(Rectangle())
+                            .padding(.horizontal, 10).padding(.vertical, 6.5)
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    .hoverHighlight(cornerRadius: 7, hovered: Color.primary.opacity(0.045))
+                    .hoverHighlight(cornerRadius: 14, hovered: Color.primary.opacity(0.06))
                 } else if let job = allJobs.first(where: { $0.id == "settings" }) { sidebarJob(job) }
                 SidebarNavigationRow(title: "Housekeeper", icon: "bubble.left.and.text.bubble.right", selected: false) {
                     appState.housekeeperTopic = housekeeperTopic
                     appState.showHousekeeper = true
                 }
-            }.padding(12)
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, 8)
+            .padding(.bottom, 6)
             HStack {
                 Text("Made by Morad")
                 Spacer()
                 Text(AppState.currentVersion)
             }.font(.system(size: 10)).foregroundStyle(.tertiary)
-                .padding(.horizontal, 20).padding(.bottom, 14)
+                .padding(.horizontal, 18).padding(.bottom, 12)
         }
-        .background { HousekeepingBackdrop(style: style, sidebar: true) }
-        .overlay(alignment: .trailing) { Divider() }
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .liquidGlassChrome(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.leading, 10)
+        .padding(.vertical, 10)
+        .padding(.trailing, 4)
     }
 
     private var allJobs: [Job] { hardwareJobs + readingJobs + holdingJobs + appJobs + routeJobs + deviceJobs }
@@ -1049,10 +1046,10 @@ private struct JobBar: View {
 
     private func sidebarCategory<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.secondary.opacity(0.8))
-                .padding(.horizontal, 10)
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary.opacity(0.75))
+                .padding(.horizontal, 12)
                 .padding(.bottom, 2)
             content()
         }
@@ -3867,10 +3864,10 @@ private struct CleanupModeOnboardingSheet: View {
                     .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(selected ? style.accent : Color.secondary.opacity(0.45))
             }
-            .padding(14)
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .housekeepingCard(cornerRadius: 14, highlighted: selected)
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .housekeepingCard(cornerRadius: 20, highlighted: selected)
+            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(HousekeepingPressableStyle(pressedScale: 0.985))
     }

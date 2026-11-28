@@ -40,3 +40,10 @@ decoration. This is a utility used in a hurry, often while something is broken.
   is not "repairing" an app. A screen named Repair invited the app to rewrite
   signatures and broke Chrome. Favour the narrowest true operation, and say what
   it does not do.
+- **2026-11-28 — true floating rounded Liquid Glass, never flat muddy brown boxes.**
+  Morad explicitly asked for sleeker, more modern macOS 26/27 ("Golden Gate") aesthetics
+  with generous rounded edges while preserving `0.0%` idle CPU and lean RAM. Use a
+  floating inset `22pt` Liquid Glass sidebar (no harsh full-height edge divider),
+  translucent obsidian/alabaster window grounds, generous `18–22pt` continuous squircle
+  cards with concentric inner radii, full `Capsule` buttons/pills/search bars, and
+  vibrant ruby-oxblood jewel accents instead of painting every surface flat brown.

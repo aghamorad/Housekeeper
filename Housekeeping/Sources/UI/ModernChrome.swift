@@ -20,8 +20,9 @@ struct NativeVisualEffectView: NSViewRepresentable {
     }
 }
 
-/// Signature macOS 26/27 Liquid Glass backdrop: translucent desktop vibrancy in
-/// the sidebar and calm, luminous tinted ground in the workspace (0.0% idle CPU).
+/// Sleek macOS 26/27 Liquid Glass window canvas: real behind-window translucency
+/// with whisper-quiet obsidian/alabaster tinting and a delicate ruby ambient glow
+/// at the top corner (0.0% idle CPU, zero timers).
 struct HousekeepingBackdrop: View {
     let style: UIStyle
     @Environment(\.colorScheme) private var scheme
@@ -33,16 +34,18 @@ struct HousekeepingBackdrop: View {
                 style.windowBackground
             } else if sidebar {
                 NativeVisualEffectView(material: .sidebar, blendingMode: .behindWindow)
-                HousekeepingPalette.sidebar.opacity(scheme == .dark ? 0.56 : 0.42)
+                HousekeepingPalette.sidebar.opacity(scheme == .dark ? 0.36 : 0.30)
             } else {
-                style.windowBackground
-                LinearGradient(
+                NativeVisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
+                HousekeepingPalette.background.opacity(scheme == .dark ? 0.76 : 0.68)
+                RadialGradient(
                     colors: [
-                        style.accent.opacity(scheme == .dark ? 0.055 : 0.035),
+                        style.accent.opacity(scheme == .dark ? 0.09 : 0.055),
                         .clear
                     ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+                    center: .topTrailing,
+                    startRadius: 10,
+                    endRadius: 640
                 )
             }
         }
@@ -129,17 +132,24 @@ private struct HousekeepingCardChrome: ViewModifier {
         return content
             .background {
                 shape.fill(.ultraThinMaterial)
-                shape.fill(style.rowBackground.opacity(scheme == .dark ? (prominent ? 0.62 : 0.54) : (prominent ? 0.82 : 0.74)))
-                if highlighted || prominent {
-                    shape.fill(style.accent.opacity(highlighted ? 0.08 : 0.035))
+                shape.fill(
+                    scheme == .dark
+                        ? Color.white.opacity(prominent ? 0.065 : (highlighted ? 0.075 : 0.042))
+                        : Color.white.opacity(prominent ? 0.84 : 0.72)
+                )
+                if highlighted {
+                    shape.fill(style.accent.opacity(scheme == .dark ? 0.11 : 0.07))
                 }
             }
             .overlay {
                 shape.strokeBorder(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(scheme == .dark ? (highlighted ? 0.24 : 0.14) : 0.90),
-                            highlighted ? style.accent.opacity(0.45) : Color.primary.opacity(scheme == .dark ? 0.07 : 0.08)
+                            Color.white.opacity(scheme == .dark ? (highlighted ? 0.28 : 0.17) : 0.96),
+                            highlighted
+                                ? style.accent.opacity(0.55)
+                                : Color.white.opacity(scheme == .dark ? 0.05 : 0.35),
+                            Color.primary.opacity(scheme == .dark ? 0.04 : 0.07)
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -148,16 +158,16 @@ private struct HousekeepingCardChrome: ViewModifier {
                 )
             }
             .shadow(
-                color: .black.opacity(scheme == .dark ? (prominent ? 0.18 : 0.08) : (prominent ? 0.05 : 0.025)),
-                radius: prominent ? 12 : 5,
+                color: .black.opacity(scheme == .dark ? (prominent ? 0.24 : 0.12) : (prominent ? 0.06 : 0.03)),
+                radius: prominent ? 14 : 6,
                 x: 0,
-                y: prominent ? 5 : 2
+                y: prominent ? 6 : 2
             )
     }
 }
 
 extension View {
-    func housekeepingCard(cornerRadius: CGFloat = 14, highlighted: Bool = false, prominent: Bool = false) -> some View {
+    func housekeepingCard(cornerRadius: CGFloat = 20, highlighted: Bool = false, prominent: Bool = false) -> some View {
         modifier(HousekeepingCardChrome(radius: cornerRadius, highlighted: highlighted, prominent: prominent))
     }
 }

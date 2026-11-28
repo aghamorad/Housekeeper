@@ -342,8 +342,8 @@ struct RoutesView: View {
                 .font(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(style.accent)
         }
-        .padding(12)
-        .housekeepingCard(cornerRadius: 10)
+        .padding(14)
+        .housekeepingCard(cornerRadius: 18)
     }
 
     private var expressMCPSettings: some View {
@@ -544,15 +544,15 @@ struct RoutesView: View {
                                 .font(.system(size: 11))
                                 .foregroundColor(isSelected ? style.accent : style.secondaryText)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                         .background(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(isSelected ? style.rowSelection : style.groupingBackground)
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(isSelected ? style.rowSelection : style.groupingBackground.opacity(0.65))
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(isSelected ? style.accent.opacity(0.6) : style.border, lineWidth: isSelected ? 1 : 0.5)
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(isSelected ? style.accent.opacity(0.65) : style.border, lineWidth: isSelected ? 1 : 0.6)
                         )
                         .contentShape(Rectangle())
                     }

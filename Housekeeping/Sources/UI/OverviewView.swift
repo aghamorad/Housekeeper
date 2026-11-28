@@ -211,15 +211,15 @@ struct OverviewView: View {
                 }
             }
         }
-        .padding(14)
-        .housekeepingCard(cornerRadius: 14, highlighted: true)
+        .padding(16)
+        .housekeepingCard(cornerRadius: 20, highlighted: true)
     }
 
     // MARK: - Hero Quick Launchpad (4 Everyday Actions)
 
     private var heroQuickDeck: some View {
-        LiquidGlassGroup(spacing: 12) {
-            HStack(spacing: 12) {
+        LiquidGlassGroup(spacing: 14) {
+            HStack(spacing: 14) {
                 OverviewHeroTile(
                     title: "Clean Up",
                     subtitle: "Safe junk & caches",
@@ -390,16 +390,16 @@ struct OverviewView: View {
     }
 
     private func groupedSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 9) {
             Text(title)
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .padding(.leading, 4)
+                .padding(.leading, 8)
             VStack(spacing: 0) {
                 content()
             }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .housekeepingCard(cornerRadius: 12)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .housekeepingCard(cornerRadius: 20)
         }
     }
 
@@ -460,20 +460,20 @@ private struct OverviewHeroTile: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(style.accent.opacity(hovering ? 0.22 : 0.13))
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(style.accent.opacity(hovering ? 0.24 : 0.14))
                     Image(systemName: icon)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(style.accent)
                         .scaleEffect(hovering && !reduceMotion ? 1.09 : 1.0)
                 }
-                .frame(width: 34, height: 34)
+                .frame(width: 38, height: 38)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 13.5, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(style.text)
                     Text(subtitle)
                         .font(.system(size: 11.5))
@@ -481,15 +481,15 @@ private struct OverviewHeroTile: View {
                         .lineLimit(1)
                 }
             }
-            .padding(14)
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .liquidGlassChrome(
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous),
-                tint: hovering ? style.accent.opacity(0.14) : nil,
+                in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                tint: hovering ? style.accent.opacity(0.16) : nil,
                 interactive: true
             )
-            .offset(y: hovering && !reduceMotion ? -1.5 : 0)
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .offset(y: hovering && !reduceMotion ? -2 : 0)
+            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(HousekeepingPressableStyle(pressedScale: 0.97, haptic: true))
         .onHover { hovering = $0 }
@@ -510,18 +510,18 @@ private struct OverviewToolRow: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(style.accent.opacity(hovering ? 0.18 : 0.09))
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(style.accent.opacity(hovering ? 0.20 : 0.11))
                     Image(systemName: icon)
-                        .font(.system(size: 13.5, weight: hovering ? .semibold : .medium))
+                        .font(.system(size: 14, weight: hovering ? .semibold : .medium))
                         .foregroundStyle(style.accent)
                         .scaleEffect(hovering && !reduceMotion ? 1.08 : 1.0)
                 }
-                .frame(width: 28, height: 28)
+                .frame(width: 32, height: 32)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 13.5, weight: .medium))
                         .foregroundStyle(style.text)
                     Text(detail)
                         .font(.system(size: 11.5))
@@ -534,9 +534,9 @@ private struct OverviewToolRow: View {
                     .foregroundStyle(hovering ? style.accent : Color.secondary.opacity(0.42))
                     .offset(x: hovering && !reduceMotion ? 3 : 0)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(hovering ? style.accent.opacity(0.065) : Color.clear)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .background(hovering ? style.accent.opacity(0.08) : Color.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(HousekeepingPressableStyle(pressedScale: 0.99, haptic: true))
@@ -617,8 +617,8 @@ private struct OverviewStorageCard: View {
                 .monospacedDigit()
             }
         }
-        .padding(18)
-        .housekeepingCard(cornerRadius: 14, prominent: true)
+        .padding(20)
+        .housekeepingCard(cornerRadius: 22, prominent: true)
         .task {
             let result = await Task.detached(priority: .utility) {
                 let home = FileManager.default.homeDirectoryForCurrentUser
@@ -695,11 +695,11 @@ struct SidebarNavigationRow: View {
                 if selected {
                     activePill
                 } else if hovering {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(style.groupingBackground.opacity(0.65))
+                    Capsule(style: .continuous)
+                        .fill(Color.primary.opacity(0.065))
                 }
             }
-            .contentShape(Rectangle())
+            .contentShape(Capsule())
         }
         .buttonStyle(HousekeepingPressableStyle(pressedScale: 0.975, haptic: true))
         .disabled(!enabled)

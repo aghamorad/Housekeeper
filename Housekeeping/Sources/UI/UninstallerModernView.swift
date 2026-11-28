@@ -795,15 +795,11 @@ struct UninstallerModernView: View {
                 leftoversDetail(app)
             }
         }
-        .contentShape(Rectangle())
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .onTapGesture {
             model.applySelectionClick(app, order: model.filteredApps.map(\.url))
         }
-        .background(style.rowBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(isSelected ? style.accent : style.border, lineWidth: isSelected ? 1.25 : 0.75)
-        )
+        .housekeepingCard(cornerRadius: 18, highlighted: isSelected)
         .contextMenu {
             Button {
                 HousekeeperTopic.ask(.installedApp(app))
